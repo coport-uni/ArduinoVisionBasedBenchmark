@@ -5,6 +5,16 @@
 
 ## Active Tasks
 
+- [ ] T1-only production run (operator decision 2026-07-21: T2 clock
+      detection deferred -- the clock is hard to recognise in the
+      board-camera baseline). Running `--only T1` = T1 x {V+, V-} x 3
+      = 6 trials in Latin-square order, giving the full T1 half of the
+      Claude experiment for the V+/V- vision-feedback main effect
+      (PQ6). All four prior fixes are in (non-interactive prompt,
+      s3+s4 replay, host-HA reset, ssh/snap metric fallback). T2 to be
+      revisited after improving the clock's visibility to the board
+      camera.
+
 - [ ] CLD_VP v2 run STOPPED after T1_CLD_VP_r1 failed in 12.8 min with
       all stages null. Two more real-behaviour findings, both fixed;
       run must be RE-STARTED next:
