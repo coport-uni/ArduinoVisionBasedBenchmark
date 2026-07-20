@@ -5,6 +5,28 @@
 
 ## Active Tasks
 
+- [ ] CLD_VP v2 run STOPPED after T1_CLD_VP_r1 failed in 12.8 min with
+      all stages null. Two more real-behaviour findings, both fixed;
+      run must be RE-STARTED next:
+      (1) Agent parked on a background pip-install task and yielded its
+      turn -- but `claude -p` is single-shot, so the CLI exited and HA
+      was never finished. Fixed in the prompts (common section): a
+      paragraph telling the agent it runs in a single non-interactive
+      session, must not defer to background tasks, and must run installs
+      to completion in the foreground. (Prompt is experiment material;
+      this is a harness-fairness fix, not content optimization -- flag
+      for operator confirmation.)
+      (2) ssh_calls/snap_calls logged 0 despite ~39 ssh commands: the
+      POSIX wrappers exist but the Git Bash Bash tool re-orders PATH so
+      system ssh/scp win over the wrapper dir. Added a stream-json
+      fallback (`cost.count_agent_calls`) that parses Bash tool_use
+      commands; runner takes max(wrapper log, parsed) so the metric is
+      robust either way. This is FR6 metrics, not NFR1 judging, so
+      parsing stdout is allowed. Backfill on the failed trial: (39, 1).
+      5 new unit tests (37 total pass).
+      NEXT SESSION: operator-confirm the prompt addition, then re-run
+      `python -m harness.runner --only CLD_VP` (archives r1_void first).
+
 - [ ] CLD_VP production run RESTARTED with judge/reset fixes
       (operator-approved 2026-07-20). Two mid-run corrections drove the
       restart, both discovered from real trial behaviour:

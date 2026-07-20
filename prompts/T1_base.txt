@@ -2,6 +2,14 @@ You are working on a Windows host connected to an Arduino UNO Q board
 (Debian Linux, aarch64). Work autonomously and do not ask the user any
 questions.
 
+You are running in a single non-interactive session. There is no one
+to hand back to and no later turn: if you end your turn, the session
+ends and the task is scored as-is. Do not defer work to background
+tasks and then wait for a notification you will never receive -- run
+commands to completion in the foreground (block on long installs
+rather than parking them), and keep working until every completion
+criterion below is actually satisfied.
+
 Board access:
 - The board is reachable ONLY via SSH: ssh arduino@192.168.31.84
   (key authentication is already configured; scp works the same way).

@@ -25,7 +25,12 @@ from harness.agents import (
 )
 from harness.board import make_board
 from harness.config import TrialSpec, build_trial_matrix, load_config
-from harness.cost import cost_a_usd, cost_b, parse_stream_json
+from harness.cost import (
+    cost_a_usd,
+    cost_b,
+    count_agent_calls,
+    parse_stream_json,
+)
 from harness.errors import CaptureError, HarnessError
 from harness.judge_t1 import T1Judge
 from harness.judge_t2 import T2Judge
@@ -240,7 +245,9 @@ def run_trial(
     finished_at = now_iso()
     duration_s = int(time.monotonic() - start_monotonic)
 
-    usage = parse_stream_json(agent.lines_snapshot())
+    agent_lines = agent.lines_snapshot()
+    usage = parse_stream_json(agent_lines)
+    agent_ssh_calls, agent_snap_calls = count_agent_calls(agent_lines)
     gpu_samples = gpu_monitor.samples if gpu_monitor else []
     wh, gpu_busy_s = cost_b(config, trial.condition.model, gpu_samples)
 
@@ -271,9 +278,12 @@ def run_trial(
         "cost_a_reported_usd": usage.reported_cost_usd,
         "cost_b_wh": wh,
         "cost_b_gpu_s": gpu_busy_s,
-        "ssh_calls": count_calls(trial_dir, "ssh_calls.log")
-        + count_calls(trial_dir, "scp_calls.log"),
-        "snap_calls": count_calls(trial_dir, "snap_calls.log"),
+        "ssh_calls": max(
+            count_calls(trial_dir, "ssh_calls.log")
+            + count_calls(trial_dir, "scp_calls.log"),
+            agent_ssh_calls,
+        ),
+        "snap_calls": max(count_calls(trial_dir, "snap_calls.log"), agent_snap_calls),
         "t2_latency_s": judge_summary.get("t2_latency_s"),
         "peak_mem_mb": resource_monitor.peak_mem_mb,
         "peak_load": resource_monitor.peak_load,

@@ -6,7 +6,45 @@ is never invalidated by a metering problem.
 """
 
 import json
+import re
 from dataclasses import dataclass
+
+# Count board/snap invocations from the agent's own stream-json as a
+# fallback: the PATH wrappers only log when the agent's shell honours
+# the prepended wrapper dir, and the Git Bash Bash tool re-orders PATH
+# so system ssh/scp win. This is a METRIC (FR6), not judging (NFR1
+# forbids stdout only for pass/fail), so parsing stdout is acceptable.
+_SSH_CMD_RE = re.compile(r"(?:^|[\s;&|(`])(ssh|scp)\s", re.MULTILINE)
+_SNAP_CMD_RE = re.compile(r"(?:^|[\s;&|(`])snap(?:\.bat)?(?:\s|$)", re.MULTILINE)
+
+
+def count_agent_calls(lines: list[str]) -> tuple[int, int]:
+    """(ssh/scp count, snap count) parsed from stream-json tool_use.
+
+    Scans Bash tool_use command strings; used only when the wrapper
+    logs under-count (see module note).
+    """
+    ssh_count = 0
+    snap_count = 0
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "assistant":
+            continue
+        for block in (event.get("message") or {}).get("content") or []:
+            if block.get("type") != "tool_use":
+                continue
+            command = (block.get("input") or {}).get("command", "")
+            if not command:
+                continue
+            ssh_count += len(_SSH_CMD_RE.findall(command))
+            snap_count += len(_SNAP_CMD_RE.findall(command))
+    return ssh_count, snap_count
 
 
 @dataclass
