@@ -239,10 +239,23 @@ class Board:
                 f" {self.HOME_DIR}/.homeassistant /opt/homeassistant",
             ),
             (
+                "stop Docker and containerd services",
+                # containerd-shi[m]: bracket trick so pkill -f does not
+                # match this command's own line and kill the shell.
+                "sh -c 'systemctl stop docker docker.socket containerd"
+                " 2>/dev/null; pkill -f \"containerd-shi[m]\" 2>/dev/null;"
+                " true'",
+            ),
+            (
                 "purge Docker engine",
                 "sh -c 'command -v docker >/dev/null && apt-get purge -y"
                 " docker.io docker-ce docker-ce-cli containerd containerd.io"
                 " docker-compose-plugin 2>/dev/null; true'",
+            ),
+            (
+                "unmount leftover Docker overlays",
+                "sh -c 'for m in $(mount | awk \"/overlay2.*merged/{print"
+                ' \\$3}"); do umount -l "$m" 2>/dev/null; done; true\'',
             ),
             ("remove /var/lib/docker", "rm -rf /var/lib/docker"),
             (
