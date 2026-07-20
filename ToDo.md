@@ -5,6 +5,12 @@
 
 ## Active Tasks
 
+- [ ] Test-drive round 3 of trial `T1_CLD_VP_r1` is running in the
+      background (agent claude-sonnet-5, started 2026-07-20 13:59 KST,
+      up to 1 h + 120 s grace). On completion: evaluate `result.json`
+      (stage timestamps, tokens, cost), verify the machine verdict
+      against the judge frames, and record the outcome in ToDo.md and
+      issue #1. Runner logs: `results/testdrive_t1_run3.log`.
 - [ ] Implement the UNO Q pilot benchmark harness per `docs/SPEC.md` with the
       approved plan deviations: board access is SSH-only (adb retired after
       initial setup), Claude conditions (CLD_VP/CLD_VM, 12 trials) run now with
