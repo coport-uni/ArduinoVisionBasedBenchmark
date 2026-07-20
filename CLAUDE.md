@@ -5,7 +5,10 @@ code in this repository.
 
 ## Overview
 
-ArduinoVisionBenchmark is an Arduino / embedded C++ project. It adopts the
+ArduinoVisionBenchmark hosts the UNO Q agentic-coding pilot benchmark: a
+Python harness (see [docs/SPEC.md](docs/SPEC.md)) that drives CLI coding
+agents against an Arduino UNO Q board over SSH, plus any C/C++ firmware or
+sketches the experiment produces. It adopts the
 [CommonClaude](https://github.com/coport-uni/CommonClaude) conventions, vendored
 as a git submodule at [external/CommonClaude/](external/CommonClaude/).
 
@@ -51,15 +54,21 @@ and PRs (CommonClaude §2 Language) applies here without exception.
 
 ---
 
-## 2. Override: Language is C/C++, not Python
+## 2. Override: Language Rules by Path
 
-CommonClaude's `CLAUDE.md` is written for Python. This project is C/C++, so the
-naming, documentation, and linting rules below **replace** CommonClaude §2 and
-§6. The MIT CommLab style principles behind them are unchanged — see
+The repository mixes two languages. Rules apply **per path**:
+
+| Path | Language | Rules |
+|---|---|---|
+| `harness/`, `tools/`, `tests/`, `claude_test/*.py` | Python 3.10+ | CommonClaude §2 and §6 verbatim: `snake_case` functions/variables, `CamelCase` classes, PEP 257 docstrings, `ruff check` before commit |
+| Firmware, sketches, `*.c/.h/.cpp/.ino` | C/C++ | §2.1–2.4 below (replaces CommonClaude §2/§6 for these files) |
+| Files an agent writes on the board during a trial | — | Experimental output; exempt from all conventions, never linted |
+
+The MIT CommLab style principles behind both columns are unchanged — see
 [external/CommonClaude/README.md](external/CommonClaude/README.md) §1, which
 already states the C form of this table.
 
-### 2.1 Naming
+### 2.1 Naming (C/C++)
 
 | Element  | Style               | Example                          |
 |----------|---------------------|----------------------------------|
@@ -103,8 +112,9 @@ int capture_frame(uint8_t *buf);
 
 TODO format: `/* TODO: (@owner) description */`
 
-### 2.4 Linting (replaces CommonClaude §6 Ruff)
+### 2.4 Linting (C/C++)
 
+Python files follow CommonClaude §6 (`ruff check` + `ruff format --check`).
 Before committing, every changed C/C++ file must pass:
 
 ```bash
@@ -121,9 +131,18 @@ Sketches compile with `arduino-cli compile` before any commit that touches them.
 | Path | Contents |
 |---|---|
 | `external/CommonClaude/` | Conventions submodule — **read-only**, never edit in place |
-| `docs/` | Project documentation |
+| `docs/` | Project documentation (`SPEC.md` is the harness requirements source) |
+| `harness/` | Benchmark harness Python package (runner, board, judges, vision, …) |
+| `tools/` | Standalone operator tools: `setup_host.py`, `preflight.py`, `calibrate.py` |
+| `prompts/` | Experiment material — **never edit without operator confirmation** (SPEC §6) |
+| `config.json` | Harness settings; secrets live in gitignored `config.local.json` |
+| `results/` | Trial outputs — gitignored, append-only, never modified after a trial completes |
 | `tests/` | Production-quality tests wired into CI |
 | `claude_test/` | Debug scripts and one-off experiments (see §3 of CommonClaude) |
+
+Board access is **SSH-only** (`ssh arduino@<board_ip>`, key auth). adb was
+used for the initial board bring-up only and is retired;
+[docs/uno_q_adb_wifi_setup.md](docs/uno_q_adb_wifi_setup.md) is legacy.
 
 Changes to the conventions themselves belong upstream in the CommonClaude
 repository, not in `external/CommonClaude/` working copy.
@@ -136,13 +155,8 @@ The hooks in [.claude/settings.json](.claude/settings.json) are copied verbatim
 from the submodule and are bash scripts that parse their stdin with `jq`.
 
 - `bash` is available via Git Bash.
-- **`jq` is not installed on this machine.** Until it is, every hook exits
-  non-zero and reports a hook error instead of enforcing its rule. Install with:
+- `jq` 1.8.2 is installed, so the hooks are live and enforce their rules.
 
-  ```powershell
-  winget install jqlang.jq
-  ```
-
-Note that `post-write-lint.sh` lints Python via `ruff` and is a no-op for `.c`,
-`.h`, `.cpp`, and `.ino` files. The C linting in §2.4 is currently a manual
-step, not hook-enforced.
+Note that `post-write-lint.sh` lints Python via `ruff` (installed user-global
+so the hook resolves it) and is a no-op for `.c`, `.h`, `.cpp`, and `.ino`
+files. The C linting in §2.4 is currently a manual step, not hook-enforced.

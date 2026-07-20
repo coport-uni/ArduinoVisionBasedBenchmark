@@ -30,8 +30,22 @@ cmake-build-*/
 .DS_Store
 Thumbs.db
 
+# ===== Python (benchmark harness) =====
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# ===== Benchmark outputs =====
+results/
+
 # ===== Secrets =====
 .env
 .env.local
 *.key
 *.pem
+config.local.json
+
+# ===== Local media (not experiment material) =====
+docs/TestVideo.mp4

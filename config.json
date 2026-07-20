@@ -1,0 +1,64 @@
+{
+  "_todo": [
+    "TODO: (@operator) web_search_allowed is undecided in the plan (SPEC 10).",
+    "TODO: (@operator) GLM model name and virtual_pricing are placeholders.",
+    "TODO: (@operator) led_regions must be replaced by tools/calibrate.py output."
+  ],
+  "board_ip": "192.168.31.84",
+  "board_user": "arduino",
+  "board_type": "unoq",
+  "ssh_path": "ssh",
+  "scp_path": "scp",
+  "ffmpeg_path": "ffmpeg",
+  "camera_device_name": "HD Pro Webcam C920",
+  "claude_path": "C:\\Users\\Dorm-Q6000\\AppData\\Roaming\\Claude\\claude-code\\2.1.209\\claude.exe",
+  "timeout_s": 3600,
+  "poll_interval_s": 10,
+  "post_exit_grace_s": 120,
+  "monitor_interval_s": 15,
+  "gpu_power_poll_s": 5,
+  "gpu_index": 0,
+  "web_search_allowed": false,
+  "enabled_conditions": ["CLD_VP", "CLD_VM"],
+  "led_regions": {
+    "rgb_led": [520, 340, 560, 380],
+    "matrix": [300, 200, 420, 290]
+  },
+  "hue_thresholds": {
+    "red": [345, 15],
+    "green": [90, 150],
+    "blue": [200, 260],
+    "min_saturation": 0.35,
+    "min_value": 0.25
+  },
+  "ha": {
+    "port": 8123,
+    "token_path_on_board": "/home/arduino/benchmark/ha_token.txt",
+    "light_entity_hint": "light."
+  },
+  "t2": {
+    "event_log_on_board": "/home/arduino/benchmark/events.log",
+    "matrix_lit_delta": 0.08,
+    "matrix_baseline_tolerance": 0.03,
+    "detect_window_s": 5,
+    "clear_window_s": 20
+  },
+  "models": {
+    "claude": { "env": {}, "local": false },
+    "glm": {
+      "env": {
+        "ANTHROPIC_BASE_URL": "http://127.0.0.1:8000",
+        "ANTHROPIC_AUTH_TOKEN": "local-dummy",
+        "ANTHROPIC_MODEL": "glm-4.6v"
+      },
+      "local": true,
+      "virtual_pricing_per_mtok": { "input": 0.6, "output": 2.2 }
+    }
+  },
+  "claude_pricing_per_mtok": {
+    "input": 3.0,
+    "output": 15.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3
+  }
+}
