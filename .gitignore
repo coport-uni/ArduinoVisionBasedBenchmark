@@ -39,6 +39,9 @@ __pycache__/
 
 # ===== Benchmark outputs =====
 results/
+# Transient camera-capture fixtures from calibration debug scripts
+claude_test/rgb_burst/
+claude_test/verify_burst/
 
 # ===== Secrets =====
 .env
