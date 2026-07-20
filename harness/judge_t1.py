@@ -59,7 +59,7 @@ class HaStatePoller(threading.Thread):
         self._entity = entity_id
         self._token = token
         self._trial_dir = trial_dir
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._csv_path = trial_dir / "ha_states.csv"
         self.observations: list[dict] = []
         self._obs_lock = threading.Lock()
@@ -67,7 +67,7 @@ class HaStatePoller(threading.Thread):
         self._capture_index = 0
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def _poll_state(self) -> tuple[str, str | None] | None:
         port = self._config["ha"]["port"]
@@ -106,7 +106,7 @@ class HaStatePoller(threading.Thread):
 
     def run(self) -> None:
         append_line(self._csv_path, "timestamp,state,color,edge,frame")
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             started = time.monotonic()
             polled = self._poll_state()
             if polled is not None:
@@ -116,6 +116,11 @@ class HaStatePoller(threading.Thread):
                 frame_name = None
                 if edge and (colour in ("red", "green", "blue")):
                     frame_name = self._capture_edge(colour)
+                elif edge and key == "off" and self._last_key is not None:
+                    # Off edge after colours: the freshest possible
+                    # LED-dark baseline for stage 4 (same ambient
+                    # light as the colour frames seconds earlier).
+                    frame_name = self._capture_edge("off")
                 with self._obs_lock:
                     self.observations.append(
                         {
@@ -133,7 +138,7 @@ class HaStatePoller(threading.Thread):
                 )
                 self._last_key = key
             elapsed = time.monotonic() - started
-            self._stop.wait(max(0.0, 1.0 - elapsed))
+            self._stop_event.wait(max(0.0, 1.0 - elapsed))
 
     def observations_snapshot(self) -> list[dict]:
         with self._obs_lock:
@@ -253,12 +258,20 @@ class T1Judge:
         blows out to near-white, so absolute hue classification fails
         while the (frame - baseline) difference keeps the colour.
         """
-        if self._baseline_frame is None or not self._baseline_frame.exists():
+        observed = self._observed_sequence()
+        # Prefer the off-edge frame captured right after the demo as
+        # the baseline: same ambient light as the colour frames. The
+        # trial-start baseline drifts (lighting changes over minutes)
+        # and can overwhelm the small LED difference.
+        baseline = self._baseline_frame
+        for obs in reversed(observed):
+            if obs["key"] == "off" and obs.get("frame"):
+                baseline = self._trial_dir / obs["frame"]
+                break
+        if baseline is None or not baseline.exists():
             append_line(self._log, f"{now_iso()} s4 blocked: no baseline")
             return False
-        edges = [
-            o for o in self._observed_sequence() if o["key"] in ("red", "green", "blue")
-        ]
+        edges = [o for o in observed if o["key"] in ("red", "green", "blue")]
         if len(edges) < 3:
             return False
         verdicts = {}
@@ -268,7 +281,7 @@ class T1Judge:
             frame = self._trial_dir / obs["frame"]
             result = dominant_color_diff(
                 frame,
-                self._baseline_frame,
+                baseline,
                 self._config["led_regions"]["rgb_led"],
                 self._config["hue_thresholds"],
             )

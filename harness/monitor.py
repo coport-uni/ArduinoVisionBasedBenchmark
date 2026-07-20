@@ -30,10 +30,10 @@ class SamplerThread(threading.Thread):
         self._csv_path = csv_path
         self._interval = interval_s
         self._header = header
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def sample(self) -> list | None:
         raise NotImplementedError
@@ -44,12 +44,12 @@ class SamplerThread(threading.Thread):
             writer = csv.writer(fh)
             if is_new:
                 writer.writerow(self._header)
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 row = self.sample()
                 if row is not None:
                     writer.writerow(row)
                     fh.flush()
-                self._stop.wait(self._interval)
+                self._stop_event.wait(self._interval)
 
 
 class ResourceMonitor(SamplerThread):
