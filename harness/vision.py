@@ -181,11 +181,66 @@ def dominant_color(image_path: Path, region: list[int], thresholds: dict) -> dic
     }
 
 
-def lit_ratio(image_path: Path, region: list[int], thresholds: dict) -> float:
-    """Fraction of region pixels that are lit (T2 matrix judgment).
+def dominant_color_diff(
+    image_path: Path,
+    baseline_path: Path,
+    region: list[int],
+    thresholds: dict,
+) -> dict:
+    """Classify the LED colour from the difference against a baseline.
 
-    A pixel counts as lit when its value clears the floor; the matrix
-    LEDs are white-ish so saturation is not required.
+    Built for tiny on-board LEDs whose core blows out to white: the
+    (frame - baseline) difference of the brightest pixels keeps the
+    emitted colour even when absolute pixels are desaturated. The
+    mean difference is classified by hue band; magnitudes below
+    diff_min_delta count as off.
+
+    @param image_path     Frame with the LED in an unknown state.
+    @param baseline_path  Frame of the same scene with the LED off.
+    @param region         [x1, y1, x2, y2] around the LED.
+    @param thresholds     config hue_thresholds mapping.
+    @return               {color, hue, magnitude} with color in
+                          red/green/blue/none.
+    """
+    with Image.open(image_path) as img:
+        frame = np.asarray(img.convert("RGB"), dtype=np.float64)
+    with Image.open(baseline_path) as img:
+        base = np.asarray(img.convert("RGB"), dtype=np.float64)
+    x1, y1, x2, y2 = region
+    diff = (frame[y1:y2, x1:x2] - base[y1:y2, x1:x2]).reshape(-1, 3)
+    if diff.size == 0:
+        return {"color": "none", "hue": None, "magnitude": 0.0}
+    top_k = int(thresholds.get("diff_top_pixels", 25))
+    top = diff[np.argsort(diff.sum(axis=-1))[-top_k:]].mean(axis=0)
+    magnitude = float(top.max())
+    if magnitude < thresholds.get("diff_min_delta", 25):
+        return {"color": "none", "hue": None, "magnitude": magnitude}
+    # Achromatic guard: exposure drift lifts all channels equally and
+    # would otherwise land on an arbitrary hue. A real LED colour has
+    # clearly unequal channels in the difference.
+    chroma = float(top.max() - top.min())
+    if chroma < thresholds.get("diff_min_chroma", 15):
+        return {"color": "none", "hue": None, "magnitude": magnitude}
+    hue, _, _ = _rgb_to_hsv(np.clip(top, 0, 255)[None, None, :])
+    hue_value = float(hue[0, 0])
+    for color in ("red", "green", "blue"):
+        low, high = thresholds[color]
+        if bool(_hue_in_range(np.array([hue_value]), low, high)[0]):
+            return {
+                "color": color,
+                "hue": hue_value,
+                "magnitude": magnitude,
+            }
+    return {"color": "none", "hue": hue_value, "magnitude": magnitude}
+
+
+def lit_ratio(image_path: Path, region: list[int], thresholds: dict) -> float:
+    """Fraction of region pixels that are lit (absolute variant).
+
+    A pixel counts as lit when its value clears the floor. Note the
+    UNO Q matrix housing is white, so this absolute metric cannot
+    tell a dark matrix from a lit one in daylight -- the judge uses
+    brightness_delta against the trial baseline instead.
     """
     with Image.open(image_path) as img:
         rgb = np.asarray(img.convert("RGB"))
@@ -195,6 +250,25 @@ def lit_ratio(image_path: Path, region: list[int], thresholds: dict) -> float:
         return 0.0
     _, _, value = _rgb_to_hsv(crop)
     return float((value >= thresholds["min_value"]).mean())
+
+
+def brightness_delta(image_path: Path, baseline_path: Path, region: list[int]) -> float:
+    """Mean per-pixel brightness increase over a baseline, 0..1.
+
+    Robust matrix-lit metric for the white-housing 8x13 matrix: lit
+    blue LEDs add channel energy on top of whatever ambient the
+    housing reflects, so the mean (frame - baseline) sum over the
+    region rises sharply when the matrix is on.
+    """
+    with Image.open(image_path) as img:
+        frame = np.asarray(img.convert("RGB"), dtype=np.float64)
+    with Image.open(baseline_path) as img:
+        base = np.asarray(img.convert("RGB"), dtype=np.float64)
+    x1, y1, x2, y2 = region
+    diff = frame[y1:y2, x1:x2] - base[y1:y2, x1:x2]
+    if diff.size == 0:
+        return 0.0
+    return float(np.clip(diff.sum(axis=-1), 0, None).mean() / 765.0)
 
 
 def frame_resolution(image_path: Path) -> tuple[int, int]:

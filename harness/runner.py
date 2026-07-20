@@ -83,8 +83,14 @@ def classify_failure(judge, timed_out: bool, network_lost: bool) -> str:
     print("  FT3 integration layer         FT4 sketch build/deploy")
     print("  FT5 judgment criteria unmet   FT8 harness defect")
     while True:
-        answer = input("failure type [FT1/FT2/FT3/FT4/FT5/FT8]: ").strip()
-        answer = answer.upper()
+        try:
+            answer = input("failure type [FT1/FT2/FT3/FT4/FT5/FT8]: ")
+        except (EOFError, OSError):
+            # Non-interactive run: leave classification to the
+            # operator afterwards instead of crashing the trial.
+            print("no console -- failure type left unclassified")
+            return None
+        answer = answer.strip().upper()
         if answer in MANUAL_FAILURE_TYPES:
             return answer
 
@@ -140,7 +146,7 @@ def run_trial(
 
     # Judge + monitors.
     if trial.task == "T1":
-        judge = T1Judge(board, config, trial_dir)
+        judge = T1Judge(board, config, trial_dir, baseline_frame=baseline_frame)
     else:
         judge = T2Judge(
             board,

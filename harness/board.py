@@ -238,26 +238,27 @@ class Board:
                 f"rm -rf {self.HOME_DIR}/homeassistant"
                 f" {self.HOME_DIR}/.homeassistant /opt/homeassistant",
             ),
+            # SPEC FR2 says to purge the Docker engine, but the UNO Q
+            # ships with Docker as part of the stock image and the
+            # Arduino App Lab runtime (app containers) requires it.
+            # Factory state therefore KEEPS the engine and the
+            # ghcr.io/arduino/app-bricks base images; everything an
+            # agent might have added (HA etc.) is still removed.
             (
-                "stop Docker and containerd services",
-                # containerd-shi[m]: bracket trick so pkill -f does not
-                # match this command's own line and kill the shell.
-                "sh -c 'systemctl stop docker docker.socket containerd"
-                " 2>/dev/null; pkill -f \"containerd-shi[m]\" 2>/dev/null;"
-                " true'",
+                "ensure Docker engine is running",
+                "sh -c 'systemctl start docker 2>/dev/null; true'",
             ),
             (
-                "purge Docker engine",
-                "sh -c 'command -v docker >/dev/null && apt-get purge -y"
-                " docker.io docker-ce docker-ce-cli containerd containerd.io"
-                " docker-compose-plugin 2>/dev/null; true'",
+                "remove all containers (apps are recreated on demand)",
+                "sh -c 'docker ps -aq | xargs -r docker rm -f; true'",
             ),
             (
-                "unmount leftover Docker overlays",
-                "sh -c 'for m in $(mount | awk \"/overlay2.*merged/{print"
-                ' \\$3}"); do umount -l "$m" 2>/dev/null; done; true\'',
+                "remove non-App-Lab images",
+                "sh -c 'docker images --format"
+                ' "{{.Repository}}:{{.Tag}} {{.ID}}" |'
+                ' grep -v "arduino/app-bricks" | awk "{print \\$2}" |'
+                " xargs -r docker rmi -f; true'",
             ),
-            ("remove /var/lib/docker", "rm -rf /var/lib/docker"),
             (
                 "purge MQTT brokers",
                 "apt-get purge -y mosquitto mosquitto-clients 2>/dev/null; true",
@@ -270,12 +271,33 @@ class Board:
             (
                 "remove benchmark-created systemd units",
                 "sh -c 'for u in $(ls /etc/systemd/system/ 2>/dev/null |"
-                ' grep -Ei "benchmark|homeassistant|hass|person|yolo");'
+                ' grep -Ei "benchmark|homeassistant|hass|person|yolo|clock");'
                 ' do systemctl disable --now "$u" 2>/dev/null;'
                 ' rm -f "/etc/systemd/system/$u"; done;'
                 " systemctl daemon-reload'",
             ),
         ]
+
+    BLANK_APP = "qtest_blank"
+
+    def flash_blank_sketch(self) -> bool:
+        """Flash the blank sketch so no prior trial's MCU code keeps
+        driving the LEDs or matrix into the next trial's judgment.
+
+        Stopping an app only kills its Linux container; the sketch
+        runs on the STM32 until overwritten, so the reset must
+        actively reflash. The qtest_blank app lives in APPS_DIR and
+        belongs to the apps baseline.
+        """
+        app_path = f"{self.APPS_DIR}/{self.BLANK_APP}"
+        if not self.shell(f"test -d {app_path}", timeout=15).ok:
+            self._log("flash_blank_sketch: blank app missing")
+            return False
+        restart = self.shell(f"arduino-app-cli app restart {app_path}", timeout=420)
+        self.shell(f"arduino-app-cli app stop {app_path}", timeout=60)
+        ok = restart.ok and "successfully" in restart.stdout
+        self._log(f"flash_blank_sketch: ok={ok}")
+        return ok
 
     def reset(self, apps_baseline: list[str] | None = None) -> list[dict]:
         """Run the FR2 reset; log every step, never abort (SPEC FR2).
@@ -312,6 +334,15 @@ class Board:
                             "output": result.stderr.strip()[:200],
                         }
                     )
+
+        flashed = self.flash_blank_sketch()
+        outcomes.append(
+            {
+                "step": "flash blank sketch (clear MCU state)",
+                "ok": flashed,
+                "output": "",
+            }
+        )
         return outcomes
 
     def verify_reset(self) -> dict:

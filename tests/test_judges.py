@@ -33,27 +33,27 @@ class ClassifyRgbTest(unittest.TestCase):
 
 class ParseEventLogTest(unittest.TestCase):
     def test_tab_separated_contract(self):
-        text = f"{iso(0)}\tperson_detected\n{iso(2)}\tmatrix_draw_o\n"
+        text = f"{iso(0)}\tclock_detected\n{iso(2)}\tmatrix_draw_o\n"
         events = parse_event_log(text)
         self.assertEqual(len(events), 2)
-        self.assertEqual(events[0][1], "person_detected")
+        self.assertEqual(events[0][1], "clock_detected")
         self.assertAlmostEqual(events[1][0] - events[0][0], 2.0, places=3)
 
     def test_tolerates_space_and_noise_lines(self):
         text = (
             "starting detector...\n"
-            f"{iso(0).replace('T', ' ')} person_detected conf=0.91\n"
+            f"{iso(0).replace('T', ' ')} clock_detected conf=0.91\n"
             "warning: low light\n"
         )
         events = parse_event_log(text)
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0][1], "person_detected")
+        self.assertEqual(events[0][1], "clock_detected")
 
     def test_five_second_window_logic(self):
         # 6 s gap: stage 2 must NOT match within a 5 s window.
-        text = f"{iso(0)}\tperson_detected\n{iso(6)}\tmatrix_draw_o\n"
+        text = f"{iso(0)}\tclock_detected\n{iso(6)}\tmatrix_draw_o\n"
         events = parse_event_log(text)
-        detections = [t for t, n in events if n == "person_detected"]
+        detections = [t for t, n in events if n == "clock_detected"]
         draws = [t for t, n in events if n == "matrix_draw_o"]
         window = 5
         matched = any(0 <= d - p <= window for p in detections for d in draws)

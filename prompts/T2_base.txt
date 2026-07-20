@@ -1,6 +1,3 @@
-[STATUS: DRAFT - AWAITING OPERATOR CONFIRMATION. Do not run trials
-with this prompt until this banner is removed by the operator.]
-
 You are working on a Windows host connected to an Arduino UNO Q board
 (Debian Linux, aarch64). Work autonomously and do not ask the user any
 questions.
@@ -17,28 +14,35 @@ Board access:
 
 {SNAP_CLAUSE}
 
-Hardware (already connected, do not change):
+Hardware (already connected, verified against the official Arduino
+UNO Q pinout; do not change):
 - A USB webcam is attached to the board and accessible via /dev/video*.
-- The board has a built-in 8x13 LED matrix.
+  It is pointed at an LED desk clock sitting in front of it.
+- The board has a built-in 8x13 blue LED matrix managed by the
+  STM32U585 microcontroller side; sketches address it with the
+  Arduino_LED_Matrix library as an 8x13 (104-element) frame. The
+  Linux side (Qualcomm QRB2210, Debian) talks to the sketch through
+  the board's Arduino bridge (e.g. Arduino App Lab apps / RPC).
 
 Your task on the board:
-1. Build a person-detection pipeline on the board that reads frames
-   from the USB webcam and detects people using the YOLOv8 nano model
-   (yolov8n). Install whatever it needs on the board.
-2. When a person is detected, draw a letter "O" on the 8x13 LED
-   matrix. When no person is detected, turn the matrix off.
+1. Build a detection pipeline on the board that reads frames from the
+   USB webcam and detects the LED desk clock using the YOLOv8 nano
+   model (yolov8n; COCO class "clock"). Install whatever it needs on
+   the board.
+2. When the clock is detected in view, draw a letter "O" on the 8x13
+   LED matrix. When no clock is detected, turn the matrix off.
 3. Log events to /home/arduino/benchmark/events.log, one line per
    event, in exactly this format (ISO 8601 local timestamp, a TAB
    character, then the event name):
-   - when a person is detected:       <timestamp>\tperson_detected
+   - when the clock is detected:      <timestamp>\tclock_detected
    - when the matrix draw is issued:  <timestamp>\tmatrix_draw_o
-4. The pipeline must run continuously so a person appearing in front
+4. The pipeline must run continuously so the clock appearing in front
    of the camera lights the matrix within a few seconds, and the
-   matrix goes dark after the person leaves.
+   matrix goes dark after the clock is removed from view.
 
 Completion criteria (all required):
 - The detection service is running against /dev/video* using yolov8n.
-- A person in front of the camera produces an "O" on the matrix and
-  person_detected / matrix_draw_o lines in
+- The clock in front of the camera produces an "O" on the matrix and
+  clock_detected / matrix_draw_o lines in
   /home/arduino/benchmark/events.log with correct timestamps.
-- With no person present, the matrix is off.
+- With the clock out of view, the matrix is off.

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from harness.util import append_line, now_iso
-from harness.vision import capture_frame, dominant_color
+from harness.vision import capture_frame, dominant_color_diff
 
 ACCEPTED_HTTP = {"200", "302", "401", "405"}
 # HA only exposes rgb_color while a light is on, so capability is also
@@ -143,10 +143,17 @@ class HaStatePoller(threading.Thread):
 class T1Judge:
     """Stage evaluator; call poll() from the runner loop."""
 
-    def __init__(self, board, config, trial_dir: Path):
+    def __init__(
+        self,
+        board,
+        config,
+        trial_dir: Path,
+        baseline_frame: Path | None = None,
+    ):
         self._board = board
         self._config = config
         self._trial_dir = trial_dir
+        self._baseline_frame = baseline_frame
         self.stages: dict[str, str | None] = {
             "s1": None,
             "s2": None,
@@ -240,7 +247,15 @@ class T1Judge:
         return False
 
     def _stage4(self) -> bool:
-        """Each colour edge frame must show the matching physical hue."""
+        """Each colour edge frame must show the matching physical hue.
+
+        Uses the baseline-differential classifier: the on-board LED3
+        blows out to near-white, so absolute hue classification fails
+        while the (frame - baseline) difference keeps the colour.
+        """
+        if self._baseline_frame is None or not self._baseline_frame.exists():
+            append_line(self._log, f"{now_iso()} s4 blocked: no baseline")
+            return False
         edges = [
             o for o in self._observed_sequence() if o["key"] in ("red", "green", "blue")
         ]
@@ -251,8 +266,9 @@ class T1Judge:
             if obs.get("frame") is None:
                 return False
             frame = self._trial_dir / obs["frame"]
-            result = dominant_color(
+            result = dominant_color_diff(
                 frame,
+                self._baseline_frame,
                 self._config["led_regions"]["rgb_led"],
                 self._config["hue_thresholds"],
             )

@@ -1,12 +1,17 @@
-"""T2 judge: person detection -> LED matrix, four stages (FR5).
+"""T2 judge: LED-clock detection -> LED matrix, four stages (FR5).
 
-Stage 1  events.log contains a person_detected line
-Stage 2  matrix_draw_o within detect_window_s after person_detected
+Task variant (operator decision 2026-07-20): the board camera watches
+an LED desk clock and the agent detects it with YOLOv8 nano (COCO
+class "clock"), replacing SPEC's person detection. The stage logic is
+unchanged; only the trigger event differs.
+
+Stage 1  events.log contains a clock_detected line
+Stage 2  matrix_draw_o within detect_window_s after clock_detected
          (board timestamps corrected by the measured clock skew)
-Stage 3  operator presses m -> 10 s capture burst shows the matrix
-         lit ratio rising above baseline
-Stage 4  operator presses c -> lit ratio returns to baseline within
-         clear_window_s
+Stage 3  operator presses m (clock placed in view) -> 10 s capture
+         burst shows the matrix lit ratio rising above baseline
+Stage 4  operator presses c (clock removed) -> lit ratio returns to
+         baseline within clear_window_s
 
 t2_latency_s = (matrix_draw_o board time + skew correction) - m mark.
 """
@@ -18,13 +23,13 @@ from datetime import datetime
 from pathlib import Path
 
 from harness.util import append_line, now_iso
-from harness.vision import capture_frame, lit_ratio
+from harness.vision import brightness_delta, capture_frame
 
 # Tolerant event-line pattern: ISO timestamp then the event name
 # somewhere on the line (prompt fixes the contract as ISO8601<TAB>event).
 _EVENT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?"
-    r"(?:[+-]\d{2}:?\d{2}|Z)?).*?(?P<event>person_detected|matrix_draw_o)"
+    r"(?:[+-]\d{2}:?\d{2}|Z)?).*?(?P<event>clock_detected|matrix_draw_o)"
 )
 
 BURST_DURATION_S = 10.0
@@ -78,10 +83,13 @@ class T2Judge:
         self._thresholds = config["hue_thresholds"]
         self._lit_delta = config["t2"]["matrix_lit_delta"]
         self._baseline_tol = config["t2"]["matrix_baseline_tolerance"]
-        self._baseline_ratio = (
-            lit_ratio(baseline_frame, self._region, self._thresholds)
+        # The white matrix housing defeats absolute lit ratios; all
+        # stage 3/4 measurements are brightness deltas against this
+        # trial's baseline frame (captured post-reset, matrix dark).
+        self._baseline_frame = (
+            baseline_frame
             if baseline_frame is not None and baseline_frame.exists()
-            else 0.0
+            else None
         )
         self._burst_thread: threading.Thread | None = None
         self._clear_thread: threading.Thread | None = None
@@ -97,11 +105,11 @@ class T2Judge:
 
     def _stage12(self) -> None:
         events = self._read_events()
-        detections = [ts for ts, name in events if name == "person_detected"]
+        detections = [ts for ts, name in events if name == "clock_detected"]
         draws = [ts for ts, name in events if name == "matrix_draw_o"]
         if detections and self.stages["s1"] is None:
             self.stages["s1"] = now_iso()
-            append_line(self._log, f"{now_iso()} s1 met (person_detected)")
+            append_line(self._log, f"{now_iso()} s1 met (clock_detected)")
         if self.stages["s2"] is None:
             window = self._config["t2"]["detect_window_s"]
             for detected_at in detections:
@@ -134,21 +142,26 @@ class T2Judge:
             append_line(self._log, f"{now_iso()} capture failed ({label}): {exc}")
             return None
 
+    def _matrix_delta(self, frame: Path) -> float | None:
+        if self._baseline_frame is None:
+            return None
+        return brightness_delta(frame, self._baseline_frame, self._region)
+
     def _run_burst(self, mark_epoch: float) -> None:
-        """Stage 3: 10 s / 2 s burst; lit ratio must rise (FR5-3)."""
+        """Stage 3: 10 s / 2 s burst; brightness delta must rise."""
         deadline = mark_epoch + BURST_DURATION_S
         index = 0
         while time.time() < deadline:
             index += 1
             frame = self._capture(f"m{index}")
             if frame is not None:
-                ratio = lit_ratio(frame, self._region, self._thresholds)
+                delta = self._matrix_delta(frame)
                 append_line(
                     self._log,
                     f"{now_iso()} burst frame {frame.name}"
-                    f" lit={ratio:.3f} baseline={self._baseline_ratio:.3f}",
+                    f" delta={delta if delta is None else round(delta, 3)}",
                 )
-                if ratio >= self._baseline_ratio + self._lit_delta:
+                if delta is not None and delta >= self._lit_delta:
                     if self.stages["s3"] is None:
                         self.stages["s3"] = now_iso()
                         append_line(self._log, f"{now_iso()} s3 met")
@@ -156,20 +169,20 @@ class T2Judge:
             time.sleep(BURST_INTERVAL_S)
 
     def _run_clear_watch(self, mark_epoch: float) -> None:
-        """Stage 4: ratio back near baseline within clear_window_s."""
+        """Stage 4: delta back near baseline within clear_window_s."""
         deadline = mark_epoch + self._config["t2"]["clear_window_s"]
         index = 0
         while time.time() < deadline:
             index += 1
             frame = self._capture(f"c{index}")
             if frame is not None:
-                ratio = lit_ratio(frame, self._region, self._thresholds)
+                delta = self._matrix_delta(frame)
                 append_line(
                     self._log,
                     f"{now_iso()} clear frame {frame.name}"
-                    f" lit={ratio:.3f} baseline={self._baseline_ratio:.3f}",
+                    f" delta={delta if delta is None else round(delta, 3)}",
                 )
-                if ratio <= self._baseline_ratio + self._baseline_tol:
+                if delta is not None and delta <= self._baseline_tol:
                     if self.stages["s4"] is None:
                         self.stages["s4"] = now_iso()
                         append_line(self._log, f"{now_iso()} s4 met")
@@ -208,5 +221,4 @@ class T2Judge:
             "t2_latency_s": self.t2_latency_s,
             "m_mark": self.m_mark_epoch,
             "c_mark": self.c_mark_epoch,
-            "baseline_lit_ratio": self._baseline_ratio,
         }

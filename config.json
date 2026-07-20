@@ -2,7 +2,8 @@
   "_todo": [
     "TODO: (@operator) web_search_allowed is undecided in the plan (SPEC 10).",
     "TODO: (@operator) GLM model name and virtual_pricing are placeholders.",
-    "TODO: (@operator) led_regions must be replaced by tools/calibrate.py output."
+    "NOTE: led_regions calibrated 2026-07-20 against the fixed layout;",
+    "recalibrate with claude_test/verify_led_matrix.py if anything moves."
   ],
   "board_ip": "192.168.31.84",
   "board_user": "arduino",
@@ -21,15 +22,17 @@
   "web_search_allowed": false,
   "enabled_conditions": ["CLD_VP", "CLD_VM"],
   "led_regions": {
-    "rgb_led": [520, 340, 560, 380],
-    "matrix": [300, 200, 420, 290]
+    "rgb_led": [434, 233, 460, 258],
+    "matrix": [448, 192, 484, 218]
   },
   "hue_thresholds": {
     "red": [345, 15],
-    "green": [90, 150],
-    "blue": [200, 260],
+    "green": [90, 160],
+    "blue": [165, 260],
     "min_saturation": 0.35,
-    "min_value": 0.25
+    "min_value": 0.25,
+    "diff_min_delta": 25,
+    "diff_top_pixels": 25
   },
   "ha": {
     "port": 8123,
@@ -38,8 +41,8 @@
   },
   "t2": {
     "event_log_on_board": "/home/arduino/benchmark/events.log",
-    "matrix_lit_delta": 0.08,
-    "matrix_baseline_tolerance": 0.03,
+    "matrix_lit_delta": 0.25,
+    "matrix_baseline_tolerance": 0.2,
     "detect_window_s": 5,
     "clear_window_s": 20
   },
