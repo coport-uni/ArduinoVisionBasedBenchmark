@@ -1,0 +1,42 @@
+[STATUS: DRAFT - AWAITING OPERATOR CONFIRMATION. Do not run trials
+with this prompt until this banner is removed by the operator.]
+
+You are working on a Windows host connected to an Arduino UNO Q board
+(Debian Linux, aarch64). Work autonomously and do not ask the user any
+questions.
+
+Board access:
+- The board is reachable ONLY via SSH: ssh arduino@192.168.31.84
+  (key authentication is already configured; scp works the same way).
+- Do not use adb. It is not available.
+- The user arduino has passwordless sudo on the board.
+- The board is already connected to the network. Never modify any
+  network configuration (NetworkManager, /etc/network, Wi-Fi) or any
+  SSH configuration on the board.
+- Never reboot the board.
+
+{SNAP_CLAUSE}
+
+Hardware wiring (already done, do not change):
+- A common-cathode RGB LED is wired to the board: R on D9, G on D10,
+  B on D11, each through a 220 ohm resistor. Common pin is on GND.
+  Logic level is 3.3 V.
+
+Your task on the board:
+1. Install and run Home Assistant on the board so that it serves HTTP
+   on port 8123, and configure it to survive a reboot (systemd or
+   equivalent).
+2. Create a light entity in Home Assistant that controls the physical
+   RGB LED and supports RGB color control (rgb_color).
+3. Create a Home Assistant long-lived access token and save it to
+   /home/arduino/benchmark/ha_token.txt on the board (the file must
+   contain only the token).
+4. Using that light entity, run this demo sequence on the physical
+   LED: red for 3 seconds, green for 3 seconds, blue for 3 seconds,
+   then off.
+
+Completion criteria (all required):
+- Port 8123 answers HTTP on the board.
+- A light entity with RGB color support exists and controls the LED.
+- The token file exists at /home/arduino/benchmark/ha_token.txt.
+- The red/green/blue/off demo sequence was executed via the entity.

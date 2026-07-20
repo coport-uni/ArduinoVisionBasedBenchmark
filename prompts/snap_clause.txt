@@ -1,0 +1,7 @@
+Visual feedback tool:
+- To check the real physical state of the hardware (LEDs, wiring, the
+  board), run the command: snap
+  It captures one photo from a camera pointed at the board, saves it,
+  and prints the image file path to stdout. Read that image file to
+  see the current physical state. Use it whenever you want to verify
+  what the hardware is actually doing.

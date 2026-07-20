@@ -1,0 +1,44 @@
+[STATUS: DRAFT - AWAITING OPERATOR CONFIRMATION. Do not run trials
+with this prompt until this banner is removed by the operator.]
+
+You are working on a Windows host connected to an Arduino UNO Q board
+(Debian Linux, aarch64). Work autonomously and do not ask the user any
+questions.
+
+Board access:
+- The board is reachable ONLY via SSH: ssh arduino@192.168.31.84
+  (key authentication is already configured; scp works the same way).
+- Do not use adb. It is not available.
+- The user arduino has passwordless sudo on the board.
+- The board is already connected to the network. Never modify any
+  network configuration (NetworkManager, /etc/network, Wi-Fi) or any
+  SSH configuration on the board.
+- Never reboot the board.
+
+{SNAP_CLAUSE}
+
+Hardware (already connected, do not change):
+- A USB webcam is attached to the board and accessible via /dev/video*.
+- The board has a built-in 8x13 LED matrix.
+
+Your task on the board:
+1. Build a person-detection pipeline on the board that reads frames
+   from the USB webcam and detects people using the YOLOv8 nano model
+   (yolov8n). Install whatever it needs on the board.
+2. When a person is detected, draw a letter "O" on the 8x13 LED
+   matrix. When no person is detected, turn the matrix off.
+3. Log events to /home/arduino/benchmark/events.log, one line per
+   event, in exactly this format (ISO 8601 local timestamp, a TAB
+   character, then the event name):
+   - when a person is detected:       <timestamp>\tperson_detected
+   - when the matrix draw is issued:  <timestamp>\tmatrix_draw_o
+4. The pipeline must run continuously so a person appearing in front
+   of the camera lights the matrix within a few seconds, and the
+   matrix goes dark after the person leaves.
+
+Completion criteria (all required):
+- The detection service is running against /dev/video* using yolov8n.
+- A person in front of the camera produces an "O" on the matrix and
+  person_detected / matrix_draw_o lines in
+  /home/arduino/benchmark/events.log with correct timestamps.
+- With no person present, the matrix is off.
