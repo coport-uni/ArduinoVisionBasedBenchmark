@@ -5,12 +5,6 @@
 
 ## Active Tasks
 
-- [ ] Test-drive round 3 of trial `T1_CLD_VP_r1` is running in the
-      background (agent claude-sonnet-5, started 2026-07-20 13:59 KST,
-      up to 1 h + 120 s grace). On completion: evaluate `result.json`
-      (stage timestamps, tokens, cost), verify the machine verdict
-      against the judge frames, and record the outcome in ToDo.md and
-      issue #1. Runner logs: `results/testdrive_t1_run3.log`.
 - [ ] Implement the UNO Q pilot benchmark harness per `docs/SPEC.md` with the
       approved plan deviations: board access is SSH-only (adb retired after
       initial setup), Claude conditions (CLD_VP/CLD_VM, 12 trials) run now with
@@ -66,6 +60,23 @@
       previous trial's leftover Home Assistant cannot fail the FR1
       port-8123 gate that reset exists to satisfy. Test-drive round 2
       relaunched with unbuffered logging.
+- [x] Test-drive round 3 evaluated (issue #1): unattended completion,
+      FT8 = 0. Agent (claude-sonnet-5) met s1 (~12 min), s2, s3;
+      21 min, $4.05 (46k output + 9.6M cache-read tokens), 6 snap
+      calls. Stage 4 failed and the failure is LEGITIMATE (FT5): the
+      agent's HA stack physically renders green/blue as white on LED3
+      — confirmed by a control run of the reference sketch showing
+      true green/blue in the same ambient light. Machine verdict
+      matches visual inspection (PQ2 concordance).
+- [x] Stage 4 redesigned as a verification replay (operator-approved
+      SPEC FR4-4 deviation): after s3, the judge drives the
+      agent-created entity through red/green/blue itself using the
+      agent-saved token (brightness 255, judge-controlled timing,
+      3 captures per colour) and accepts on majority hue verdict OR
+      median expected-channel margin >= 6. This removes the
+      SSH-poll/capture timing race that made demo-edge frames land
+      outside 3 s colour holds. Agent-white output cleanly rejected
+      (median margins green 2.1 / blue 0.2 vs red 47.6).
 
 - [x] Add CommonClaude as a submodule at `external/CommonClaude` and apply its
       conventions to this project (`git init`, `.claude/` hooks and settings,

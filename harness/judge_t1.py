@@ -7,7 +7,17 @@ agent stdout (NFR1).
 Stage 1  port 8123 answers 200/302/401/405 (board-internal curl)
 Stage 2  token file exists and /api/states lists an RGB-capable light
 Stage 3  polled states show red -> green -> blue -> off in order
-Stage 4  a frame captured at each colour edge shows that hue on the LED
+Stage 4  verification replay: the judge drives the agent-created
+         entity through red/green/blue itself (via the agent-saved
+         token) and checks each colour physically on camera
+
+Stage 4 deviates from SPEC FR4-4 (classify frames captured at the
+demo's own colour edges) by operator approval: every poll is an SSH
+round trip and edge captures block for 2-3 s, so demo-edge frames
+land outside the 3 s holds more often than inside them. The replay
+still exercises the full agent deliverable -- token, entity, sketch,
+wiring -- with judge-controlled timing, and uses only the HA API and
+the camera (NFR1). Demo-edge frames are still archived as evidence.
 """
 
 import json
@@ -16,7 +26,11 @@ import time
 from pathlib import Path
 
 from harness.util import append_line, now_iso
-from harness.vision import capture_frame, dominant_color_diff
+from harness.vision import (
+    capture_frame,
+    dominant_color_diff,
+    expected_channel_margin,
+)
 
 ACCEPTED_HTTP = {"200", "302", "401", "405"}
 # HA only exposes rgb_color while a light is on, so capability is also
@@ -251,42 +265,129 @@ class T1Judge:
                     return True
         return False
 
-    def _stage4(self) -> bool:
-        """Each colour edge frame must show the matching physical hue.
+    REPLAY_COLORS = {
+        "red": [255, 0, 0],
+        "green": [0, 255, 0],
+        "blue": [0, 0, 255],
+    }
+    REPLAY_SETTLE_S = 1.5
 
-        Uses the baseline-differential classifier: the on-board LED3
-        blows out to near-white, so absolute hue classification fails
-        while the (frame - baseline) difference keeps the colour.
-        """
-        observed = self._observed_sequence()
-        # Prefer the off-edge frame captured right after the demo as
-        # the baseline: same ambient light as the colour frames. The
-        # trial-start baseline drifts (lighting changes over minutes)
-        # and can overwhelm the small LED difference.
-        baseline = self._baseline_frame
-        for obs in reversed(observed):
-            if obs["key"] == "off" and obs.get("frame"):
-                baseline = self._trial_dir / obs["frame"]
-                break
-        if baseline is None or not baseline.exists():
-            append_line(self._log, f"{now_iso()} s4 blocked: no baseline")
-            return False
-        edges = [o for o in observed if o["key"] in ("red", "green", "blue")]
-        if len(edges) < 3:
-            return False
-        verdicts = {}
-        for obs in edges:
-            if obs.get("frame") is None:
-                return False
-            frame = self._trial_dir / obs["frame"]
-            result = dominant_color_diff(
-                frame,
-                baseline,
-                self._config["led_regions"]["rgb_led"],
-                self._config["hue_thresholds"],
+    def _call_light_service(self, service: str, payload: dict) -> bool:
+        port = self._config["ha"]["port"]
+        body = json.dumps(payload)
+        result = self._board.shell(
+            f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 10"
+            f" -X POST -H 'Authorization: Bearer {self._token}'"
+            f" -H 'Content-Type: application/json' -d '{body}'"
+            f" http://127.0.0.1:{port}/api/services/light/{service}",
+            timeout=20,
+        )
+        return result.ok and result.stdout.strip() in ("200", "201")
+
+    def _replay_capture(self, name: str) -> Path | None:
+        path = self._trial_dir / f"replay_{name}.jpg"
+        try:
+            capture_frame(
+                self._config,
+                path,
+                lock_dir=self._config.results_dir,
+                lock_timeout_s=20.0,
             )
-            verdicts[obs["key"]] = result["color"]
-        if all(verdicts.get(c) == c for c in ("red", "green", "blue")):
+            return path
+        except Exception as exc:
+            append_line(self._log, f"{now_iso()} replay capture failed ({name}): {exc}")
+            return None
+
+    def _stage4(self) -> bool:
+        """Verification replay with judge-controlled timing.
+
+        Drives the agent-created entity through each colour via the
+        agent-saved token, captures after a settle delay, and
+        classifies with the baseline-differential classifier (the
+        on-board LED3 blows out to near-white, so absolute hue fails
+        while frame-minus-off-baseline keeps the colour).
+        """
+        if self._token is None or self.entity_id is None:
+            return False
+        # Freeze the poller so its edge captures cannot interleave
+        # with the replay's own captures.
+        if self._poller is not None:
+            self._poller.stop()
+
+        payload_off = {"entity_id": self.entity_id}
+        if not self._call_light_service("turn_off", payload_off):
+            append_line(self._log, f"{now_iso()} s4 replay: turn_off failed")
+            return False
+        time.sleep(self.REPLAY_SETTLE_S)
+        baseline = self._replay_capture("off")
+        if baseline is None:
+            return False
+
+        verdicts = {}
+        for color, rgb in self.REPLAY_COLORS.items():
+            ok = self._call_light_service(
+                "turn_on",
+                {
+                    "entity_id": self.entity_id,
+                    "rgb_color": rgb,
+                    "brightness": 255,
+                },
+            )
+            if not ok:
+                append_line(self._log, f"{now_iso()} s4 replay: turn_on {color} failed")
+                return False
+            time.sleep(self.REPLAY_SETTLE_S)
+            # Median over three captures: single JPEG frames are noisy
+            # enough (auto-exposure jitter) to swing the margin by a
+            # few counts either side of the floor.
+            hue_hits = 0
+            margins = []
+            for shot in range(3):
+                frame = self._replay_capture(f"{color}_{shot}")
+                if frame is None:
+                    return False
+                result = dominant_color_diff(
+                    frame,
+                    baseline,
+                    self._config["led_regions"]["rgb_led"],
+                    self._config["hue_thresholds"],
+                )
+                if result["color"] == color:
+                    hue_hits += 1
+                margins.append(
+                    expected_channel_margin(
+                        frame,
+                        baseline,
+                        self._config["led_regions"]["rgb_led"],
+                        color,
+                        self._config["hue_thresholds"],
+                    )
+                )
+                time.sleep(0.4)
+            margins.sort()
+            median_margin = margins[1]
+            margin_floor = self._config["hue_thresholds"].get(
+                "diff_expected_margin", 6.0
+            )
+            # The replay knows which colour it commanded, so accept on
+            # either signal: the open hue classifier (majority of the
+            # three shots), or the expected channel leading the other
+            # two by the margin floor. In bright ambient the fringe
+            # chroma of a CORRECT implementation thins below the
+            # achromatic guard, while a white (misdriven) LED stays
+            # near zero margin.
+            matched = hue_hits >= 2 or median_margin >= margin_floor
+            verdicts[color] = color if matched else "none"
+            append_line(
+                self._log,
+                f"{now_iso()} s4 replay {color}: hue_hits={hue_hits}/3"
+                f" margins={[round(m, 1) for m in margins]}"
+                f" median={median_margin:.1f}"
+                f" -> {'OK' if matched else 'MISS'}",
+            )
+        self._call_light_service("turn_off", payload_off)
+
+        if all(verdicts.get(c) == c for c in self.REPLAY_COLORS):
             self.stages["s4"] = now_iso()
             append_line(self._log, f"{now_iso()} s4 met ({verdicts})")
             return True

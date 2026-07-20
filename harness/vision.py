@@ -234,6 +234,36 @@ def dominant_color_diff(
     return {"color": "none", "hue": hue_value, "magnitude": magnitude}
 
 
+def expected_channel_margin(
+    image_path: Path,
+    baseline_path: Path,
+    region: list[int],
+    expected: str,
+    thresholds: dict,
+) -> float:
+    """How strongly the expected colour channel leads the others.
+
+    Over the brightest top-K diff pixels, returns
+    mean(expected channel) - mean(other two channels). A correctly
+    coloured LED yields a clearly positive margin even when bright
+    ambient light thins the fringe chroma below the achromatic guard;
+    a white (miswired/misdriven) LED stays near zero or negative.
+    """
+    channel = {"red": 0, "green": 1, "blue": 2}[expected]
+    with Image.open(image_path) as img:
+        frame = np.asarray(img.convert("RGB"), dtype=np.float64)
+    with Image.open(baseline_path) as img:
+        base = np.asarray(img.convert("RGB"), dtype=np.float64)
+    x1, y1, x2, y2 = region
+    diff = (frame[y1:y2, x1:x2] - base[y1:y2, x1:x2]).reshape(-1, 3)
+    if diff.size == 0:
+        return 0.0
+    top_k = int(thresholds.get("diff_top_pixels", 25))
+    top = diff[np.argsort(diff.sum(axis=-1))[-top_k:]].mean(axis=0)
+    others = [top[i] for i in range(3) if i != channel]
+    return float(top[channel] - (others[0] + others[1]) / 2.0)
+
+
 def lit_ratio(image_path: Path, region: list[int], thresholds: dict) -> float:
     """Fraction of region pixels that are lit (absolute variant).
 
