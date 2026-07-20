@@ -47,7 +47,10 @@
     "clear_window_s": 20
   },
   "models": {
-    "claude": { "env": {}, "local": false },
+    "claude": {
+      "env": { "ANTHROPIC_MODEL": "claude-sonnet-5" },
+      "local": false
+    },
     "glm": {
       "env": {
         "ANTHROPIC_BASE_URL": "http://127.0.0.1:8000",
