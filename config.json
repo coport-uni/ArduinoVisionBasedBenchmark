@@ -13,7 +13,7 @@
   "ffmpeg_path": "ffmpeg",
   "camera_device_name": "HD Pro Webcam C920",
   "claude_path": "C:\\Users\\Dorm-Q6000\\AppData\\Roaming\\Claude\\claude-code\\2.1.209\\claude.exe",
-  "timeout_s": 3600,
+  "timeout_s": 5400,
   "poll_interval_s": 10,
   "post_exit_grace_s": 120,
   "monitor_interval_s": 15,

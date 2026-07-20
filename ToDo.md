@@ -5,6 +5,30 @@
 
 ## Active Tasks
 
+- [ ] CLD_VP production run RESTARTED with judge/reset fixes
+      (operator-approved 2026-07-20). Two mid-run corrections drove the
+      restart, both discovered from real trial behaviour:
+      (1) T1 stage 3 folded into the stage-4 verification replay --
+      passive observation of the agent's one-shot R/G/B/off demo is
+      timing-fragile (the demo usually finishes before the state
+      poller starts at s2), which false-negatived T1_CLD_VP_r2 even
+      though the agent completed the task; s3 now = replay confirms
+      RED renders in order, s4 = all three. Operator-approved
+      FR4-3/4-4 deviation. r1 (which had passed s3 passively) is
+      re-run for comparability.
+      (2) FR2 reset gap -- agents install Home Assistant either as a
+      Docker container (r1) or a host systemd venv service (r2); the
+      old reset only removed the Docker form and its systemd grep
+      missed the hyphenated `home-assistant.service`, so a host HA
+      survived and answered 8123 into the next trial. Reset now stops
+      and disables host HA services (home-?assistant|hass), kills
+      stray processes, and removes the venv dirs (verified:
+      port_8123_dead True after reset).
+      timeout_s raised 3600 -> 5400 (T2 agent spent ~45 min on a
+      torch->onnxruntime pivot). Superseded earlier partial results
+      (T1_CLD_VP_r1 success, r2 s3 false-negative, T2_CLD_VP_r1 FT5)
+      are archived under results/*_void_* and re-collected.
+
 - [ ] CLD_VP production run (6 trials, operator-approved 2026-07-20).
       Results so far: T1_CLD_VP_r1 SUCCESS (17.7 min, $4.92, replay
       margins red +70 / green +9.5 / blue +5.1); T2_CLD_VP_r1 FT5 --

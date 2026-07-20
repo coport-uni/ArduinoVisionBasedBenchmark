@@ -226,6 +226,25 @@ class Board:
         bench = self.BENCH_DIR
         return [
             (
+                # Agents install HA either as a Docker container or as
+                # a host systemd venv service; catch both. The name
+                # variants (home-assistant, homeassistant, hass) must
+                # all be matched -- an earlier grep missed the
+                # hyphenated form and left a systemd HA answering 8123.
+                "stop and disable host Home Assistant services",
+                "sh -c 'for u in $(systemctl list-unit-files"
+                ' --no-legend 2>/dev/null | awk "{print \\$1}" |'
+                ' grep -Ei "home-?assistant|hass");'
+                ' do systemctl disable --now "$u" 2>/dev/null;'
+                ' rm -f "/etc/systemd/system/$u"; done;'
+                " systemctl daemon-reload 2>/dev/null; true'",
+            ),
+            (
+                "kill any stray Home Assistant processes",
+                'sh -c \'pkill -f "[h]omeassistant" 2>/dev/null;'
+                ' pkill -f "[h]ass" 2>/dev/null; true\'',
+            ),
+            (
                 "stop and remove Home Assistant containers",
                 "docker ps -aq --filter name=homeassistant | xargs -r docker rm -f",
             ),
@@ -234,9 +253,10 @@ class Board:
                 "docker images -q '*homeassistant*' | xargs -r docker rmi -f",
             ),
             (
-                "remove Home Assistant data directories",
+                "remove Home Assistant data + venv directories",
                 f"rm -rf {self.HOME_DIR}/homeassistant"
-                f" {self.HOME_DIR}/.homeassistant /opt/homeassistant",
+                f" {self.HOME_DIR}/.homeassistant /opt/homeassistant"
+                f" {self.HOME_DIR}/hass {self.HOME_DIR}/.config/homeassistant",
             ),
             # SPEC FR2 says to purge the Docker engine, but the UNO Q
             # ships with Docker as part of the stock image and the
@@ -271,7 +291,8 @@ class Board:
             (
                 "remove benchmark-created systemd units",
                 "sh -c 'for u in $(ls /etc/systemd/system/ 2>/dev/null |"
-                ' grep -Ei "benchmark|homeassistant|hass|person|yolo|clock");'
+                " grep -Ei"
+                ' "benchmark|home-?assistant|hass|person|yolo|clock|led");'
                 ' do systemctl disable --now "$u" 2>/dev/null;'
                 ' rm -f "/etc/systemd/system/$u"; done;'
                 " systemctl daemon-reload'",

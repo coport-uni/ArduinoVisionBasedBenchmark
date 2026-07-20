@@ -6,18 +6,21 @@ agent stdout (NFR1).
 
 Stage 1  port 8123 answers 200/302/401/405 (board-internal curl)
 Stage 2  token file exists and /api/states lists an RGB-capable light
-Stage 3  polled states show red -> green -> blue -> off in order
-Stage 4  verification replay: the judge drives the agent-created
-         entity through red/green/blue itself (via the agent-saved
-         token) and checks each colour physically on camera
+Stage 3+4  ONE verification replay: the judge drives the agent-created
+         entity through red -> green -> blue itself (via the agent-
+         saved token) and checks each colour physically on camera.
+         s3 is set once RED is verified in order (entity controllable,
+         LED physically responds); s4 once all three pass.
 
-Stage 4 deviates from SPEC FR4-4 (classify frames captured at the
-demo's own colour edges) by operator approval: every poll is an SSH
-round trip and edge captures block for 2-3 s, so demo-edge frames
-land outside the 3 s holds more often than inside them. The replay
-still exercises the full agent deliverable -- token, entity, sketch,
-wiring -- with judge-controlled timing, and uses only the HA API and
-the camera (NFR1). Demo-edge frames are still archived as evidence.
+Operator-approved deviation from SPEC FR4-3/4-4 (passively observe the
+agent's own demo at its colour edges): passive observation is timing-
+fragile because the agent's one-shot R/G/B/off demo usually finishes
+before the state poller starts (the poller needs the token, i.e.
+stage 2), so the judge would miss it and false-negative. The replay
+exercises the full agent deliverable -- token, entity, sketch, wiring
+-- with judge-controlled timing, uses only the HA API and the camera
+(NFR1), and archives every frame plus a note when the demo *was*
+caught passively.
 """
 
 import json
@@ -250,21 +253,21 @@ class T1Judge:
                 last = key
         return sequence
 
-    def _stage3(self) -> bool:
+    def _passive_sequence_seen(self) -> bool:
+        """Whether the poller happened to catch the agent's own demo.
+
+        Logged as supporting evidence only. s3/s4 no longer gate on
+        this -- the agent's one-shot demo often runs before the poller
+        starts (poller needs the token, met at s2), so passive
+        observation is timing-fragile. The verification replay in
+        _stage34 is the authoritative check.
+        """
         sequence = [o["key"] for o in self._observed_sequence()]
-        # red, green, blue then off must appear as a subsequence.
         position = 0
         for key in sequence:
-            if key == EXPECTED_SEQUENCE[position]:
+            if position < len(EXPECTED_SEQUENCE) and key == EXPECTED_SEQUENCE[position]:
                 position += 1
-                if position == len(EXPECTED_SEQUENCE):
-                    self.stages["s3"] = now_iso()
-                    append_line(
-                        self._log,
-                        f"{now_iso()} s3 met (sequence {sequence})",
-                    )
-                    return True
-        return False
+        return position == len(EXPECTED_SEQUENCE)
 
     REPLAY_COLORS = {
         "red": [255, 0, 0],
@@ -305,17 +308,25 @@ class T1Judge:
             append_line(self._log, f"{now_iso()} replay capture failed ({name}): {exc}")
             return None
 
-    def _stage4(self) -> bool:
-        """Verification replay with judge-controlled timing.
+    def _stage34(self) -> bool:
+        """Verification replay driving stages 3 AND 4.
 
-        Drives the agent-created entity through each colour via the
-        agent-saved token, captures after a settle delay, and
-        classifies with the baseline-differential classifier (the
-        on-board LED3 blows out to near-white, so absolute hue fails
-        while frame-minus-off-baseline keeps the colour).
+        The judge commands the agent-created entity through
+        red -> green -> blue itself (agent-saved token) and verifies
+        each physically on camera. Setting s3 after RED confirms the
+        entity is RGB-controllable and the LED physically responds in
+        order; s4 after all three confirms the full sequence. This
+        replaces the timing-fragile passive observation of the agent's
+        one-shot demo. Colour classification is the baseline-
+        differential (the on-board LED3 blows out to near-white, so
+        absolute hue fails while frame-minus-off keeps the colour).
         """
         if self._token is None or self.entity_id is None:
             return False
+        # Record whether the poller passively caught the demo (evidence
+        # only; not a gate).
+        if self._passive_sequence_seen():
+            append_line(self._log, f"{now_iso()} note: agent demo observed passively")
         # Freeze the poller so its edge captures cannot interleave
         # with the replay's own captures.
         if self._poller is not None:
@@ -402,17 +413,26 @@ class T1Judge:
             verdicts[color] = color if matched else "none"
             append_line(
                 self._log,
-                f"{now_iso()} s4 replay {color}:"
+                f"{now_iso()} replay {color}:"
                 f" off_level={off_level:.1f} history={history}"
                 f" -> {'OK' if matched else 'MISS'}",
             )
+            if not matched:
+                # A wrong colour terminates the sequence: the ordered
+                # demo requirement is not satisfiable.
+                break
+            # First colour verified in order -> stage 3; all three ->
+            # stage 4.
+            if color == "red" and self.stages["s3"] is None:
+                self.stages["s3"] = now_iso()
+                append_line(self._log, f"{now_iso()} s3 met (entity controllable, red)")
         self._call_light_service("turn_off", payload_off)
 
         if all(verdicts.get(c) == c for c in self.REPLAY_COLORS):
             self.stages["s4"] = now_iso()
             append_line(self._log, f"{now_iso()} s4 met ({verdicts})")
             return True
-        append_line(self._log, f"{now_iso()} s4 mismatch ({verdicts})")
+        append_line(self._log, f"{now_iso()} replay incomplete ({verdicts})")
         return False
 
     # -- driver ----------------------------------------------------
@@ -423,9 +443,11 @@ class T1Judge:
             return False
         if self.stages["s2"] is None and not self._stage2():
             return False
-        if self.stages["s3"] is None and not self._stage3():
-            return False
-        if self.stages["s4"] is None and not self._stage4():
+        # One replay pass sets both s3 (red controllable) and s4 (all
+        # three verified); it returns True only when s4 is met.
+        if (self.stages["s3"] is None or self.stages["s4"] is None) and (
+            not self._stage34()
+        ):
             return False
         return all(self.stages.values())
 

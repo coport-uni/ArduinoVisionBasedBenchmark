@@ -19,6 +19,6 @@ print("s1:", judge._stage1())
 print("s2:", judge._stage2(), "entity:", judge.entity_id)
 if judge.entity_id is None:
     sys.exit("no entity -- board not in post-trial state")
-print("s4 replay:", judge._stage4())
+print("s3+s4 replay:", judge._stage34())
 print("stages:", judge.stages)
 print("frames in:", trial_dir)
