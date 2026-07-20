@@ -319,19 +319,26 @@ def main() -> int:
     trials, is_redo = select_trials(config, args.only, args.redo)
     tasks = sorted({t.task for t in trials})
 
-    if not args.skip_preflight:
-        from tools.preflight import run_preflight
-
-        if run_preflight(config, selected_tasks=tuple(tasks)) != 0:
-            print("preflight failed -- refusing to start (FR1)")
-            return 1
-
     baseline_path = config.results_dir / "_baseline" / "apps.json"
     apps_baseline = None
     if baseline_path.exists():
         apps_baseline = json.loads(baseline_path.read_text(encoding="utf-8")).get(
             "apps"
         )
+
+    # Clean up leftovers from any previous trial BEFORE preflight:
+    # FR1-4 requires port 8123 silent, and a prior agent's Home
+    # Assistant would otherwise fail the gate that reset exists to fix.
+    if not args.no_reset:
+        print("pre-run reset (clearing any previous trial leftovers)...")
+        board.reset(apps_baseline=apps_baseline)
+
+    if not args.skip_preflight:
+        from tools.preflight import run_preflight
+
+        if run_preflight(config, selected_tasks=tuple(tasks)) != 0:
+            print("preflight failed -- refusing to start (FR1)")
+            return 1
 
     keys = KeyListener()
     keys.start()

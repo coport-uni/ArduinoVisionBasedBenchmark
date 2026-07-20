@@ -21,6 +21,46 @@
 
 ## Completed
 
+- [x] Harness phases 0-6 implemented and verified (issue #1, branch
+      `feat/benchmark-harness`): host bootstrap (`tools/setup_host.py`,
+      Python 3.12 / ffmpeg / ruff installs, SSH key registered on the
+      board, passwordless sudo verified), SSH board layer with
+      forbidden-pattern guard, per-run preflight (all checks PASS on
+      the live board), agent runner with resume, T1/T2 judges,
+      monitors, cost, report, 32 unit tests, prompt files confirmed
+      by the operator.
+- [x] Real-hardware calibration (issue #1): LED3 is the built-in
+      active-low RGB LED — added baseline-differential hue classifier
+      (12/12 on a live burst) and brightness-delta matrix metric
+      (white housing defeats absolute ratios); led_regions calibrated
+      to rgb_led [434,233,460,258], matrix [448,192,484,218].
+- [x] T2 task variant per operator decision (issue #1): YOLOv8n COCO
+      "clock" detection of an LED desk clock replaces person
+      detection; prompts, judge events (clock_detected), and tests
+      renamed.
+- [x] FR2 reset corrected to factory-state restoration (issue #1):
+      keep Docker engine + App Lab base images (App Lab requires
+      them), reflash a blank sketch each reset (MCU sketches outlive
+      stopped containers), and remove leftover `ha-mcu-bridge` /
+      `qtest_blink` apps from the board to prevent T1 answer leakage;
+      apps baseline re-snapshotted (now only `qtest_blank`).
+- [x] Test drive started: trial `T1_CLD_VP_r1` running end-to-end in
+      the background with a progress monitor attached.
+- [x] Test-drive round 1 debrief (issue #1): the agent (claude-fable-5,
+      the unpinned CLI default) completed the T1 task in ~11 minutes
+      (HA up, LED3 light entity, token saved, demo observed — s1-s3
+      met), but the harness misjudged stage 4 (stale trial baseline
+      vs lighting drift) and crashed in teardown (threading.Thread
+      `_stop` attribute collision). Fixed: `_stop` renamed to
+      `_stop_event` in monitor/poller threads; stage 4 now prefers the
+      off-edge frame captured right after the demo as its baseline;
+      CLD condition pinned to `claude-sonnet-5` via
+      `models.claude.env.ANTHROPIC_MODEL` (operator decision).
+- [x] Runner ordering fix: run a cleanup reset BEFORE preflight so a
+      previous trial's leftover Home Assistant cannot fail the FR1
+      port-8123 gate that reset exists to satisfy. Test-drive round 2
+      relaunched with unbuffered logging.
+
 - [x] Add CommonClaude as a submodule at `external/CommonClaude` and apply its
       conventions to this project (`git init`, `.claude/` hooks and settings,
       `.clang-format`, project `CLAUDE.md`, `ToDo.md`, `claude_test/`,
