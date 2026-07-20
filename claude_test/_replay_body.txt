@@ -1,0 +1,90 @@
+        margin_floor = self._config["hue_thresholds"].get(
+            "diff_expected_margin", 4.0
+        )
+        rise_min = self._config["hue_thresholds"].get("replay_rise_min", 6.0)
+        region = self._config["led_regions"]["rgb_led"]
+        payload_off = {"entity_id": self.entity_id}
+
+        verdicts = {}
+        for color, rgb in self.REPLAY_COLORS.items():
+            # Adjacent-pair differential: a fresh OFF frame right
+            # before each colour, so ambient light and auto-exposure
+            # are identical within the pair and the diff isolates the
+            # LED. Both frames are gated on region brightness -- OFF
+            # must be at the dark plateau, ON must show a rise -- which
+            # also absorbs the variable HA -> MQTT -> RPC latency.
+            if not self._call_light_service("turn_off", payload_off):
+                append_line(self._log, f"{now_iso()} s4 replay: turn_off failed")
+                return False
+            time.sleep(self.REPLAY_SETTLE_S)
+            off_frame = None
+            off_level = None
+            deadline = time.monotonic() + self.READBACK_TIMEOUT_S
+            shot = 0
+            while time.monotonic() < deadline:
+                shot += 1
+                candidate = self._replay_capture(f"{color}_off{shot}")
+                if candidate is None:
+                    return False
+                level = region_brightness(candidate, region)
+                if off_level is not None and level >= off_level - 2.0:
+                    break  # dark plateau reached (no further drop)
+                if off_level is None or level < off_level:
+                    off_frame, off_level = candidate, level
+                time.sleep(0.5)
+            if off_frame is None or off_level is None:
+                return False
+
+            ok = self._call_light_service(
+                "turn_on",
+                {
+                    "entity_id": self.entity_id,
+                    "rgb_color": rgb,
+                    "brightness": 255,
+                },
+            )
+            if not ok:
+                append_line(
+                    self._log, f"{now_iso()} s4 replay: turn_on {color} failed"
+                )
+                return False
+            deadline = time.monotonic() + self.READBACK_TIMEOUT_S
+            history = []
+            hits = 0
+            matched = False
+            shot = 0
+            while time.monotonic() < deadline:
+                shot += 1
+                frame = self._replay_capture(f"{color}_on{shot}")
+                if frame is None:
+                    return False
+                rise = region_brightness(frame, region) - off_level
+                if rise < rise_min:
+                    history.append(f"unlit({rise:+.1f})")
+                    time.sleep(0.4)
+                    continue
+                result = dominant_color_diff(
+                    frame, off_frame, region, self._config["hue_thresholds"]
+                )
+                margin = expected_channel_margin(
+                    frame,
+                    off_frame,
+                    region,
+                    color,
+                    self._config["hue_thresholds"],
+                )
+                hit = result["color"] == color or margin >= margin_floor
+                history.append(f"{margin:+.1f}{'*' if hit else ''}")
+                hits = hits + 1 if hit else 0
+                if hits >= 2:
+                    matched = True
+                    break
+                time.sleep(0.4)
+            verdicts[color] = color if matched else "none"
+            append_line(
+                self._log,
+                f"{now_iso()} s4 replay {color}:"
+                f" off_level={off_level:.1f} history={history}"
+                f" -> {'OK' if matched else 'MISS'}",
+            )
+        self._call_light_service("turn_off", payload_off)

@@ -234,6 +234,17 @@ def dominant_color_diff(
     return {"color": "none", "hue": hue_value, "magnitude": magnitude}
 
 
+def region_brightness(image_path: Path, region: list[int]) -> float:
+    """Mean channel-sum brightness of a region (0..765 scale)."""
+    with Image.open(image_path) as img:
+        rgb = np.asarray(img.convert("RGB"), dtype=np.float64)
+    x1, y1, x2, y2 = region
+    crop = rgb[y1:y2, x1:x2]
+    if crop.size == 0:
+        return 0.0
+    return float(crop.sum(axis=-1).mean())
+
+
 def expected_channel_margin(
     image_path: Path,
     baseline_path: Path,

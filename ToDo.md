@@ -77,6 +77,26 @@
       SSH-poll/capture timing race that made demo-edge frames land
       outside 3 s colour holds. Agent-white output cleanly rejected
       (median margins green 2.1 / blue 0.2 vs red 47.6).
+- [x] CORRECTION of the round-3 verdict (issue #1): the user
+      challenged the white-LED conclusion and the record trace proved
+      the agent implementation CORRECT at every link -- MQTT payloads
+      exact (mosquitto_sub), main.py thresholds sound, and direct
+      Bridge-RPC drive gives proper per-channel colours (margins red
+      +61 / green +6.8 / blue +8.8 on camera). The earlier "white"
+      readings were harness artifacts: replay captures raced the
+      variable HA->MQTT->RPC latency, and rising afternoon ambient
+      light collapsed the green/blue margins (+9 -> +2 within 10
+      minutes). Trial reclassified FT5 -> FT8 (void, re-run).
+      Replay hardened to adjacent OFF/ON pair differentials with
+      brightness-gated readback, but margins remain ambient-limited:
+      the fix is OPTICAL (camera closer to the board or reduced
+      ambient), not algorithmic.
+- [x] T2 judging made fully automatic (operator decision: the clock
+      sits permanently in the board camera's view): s3 = matrix lit
+      vs trial baseline on every poll, s4 = lit stable >= 10 s later,
+      t2_latency = board-internal detected->draw gap; m/c keys are now
+      optional evidence hooks and the preflight console-TTY check is
+      removed, so T2 runs unattended like T1.
 
 - [x] Add CommonClaude as a submodule at `external/CommonClaude` and apply its
       conventions to this project (`git init`, `.claude/` hooks and settings,

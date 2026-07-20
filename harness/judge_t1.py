@@ -30,6 +30,7 @@ from harness.vision import (
     capture_frame,
     dominant_color_diff,
     expected_channel_margin,
+    region_brightness,
 )
 
 ACCEPTED_HTTP = {"200", "302", "401", "405"}
@@ -270,7 +271,13 @@ class T1Judge:
         "green": [0, 255, 0],
         "blue": [0, 0, 255],
     }
-    REPLAY_SETTLE_S = 1.5
+    # Post-readback settle: the HA -> MQTT -> bridge-RPC -> sketch
+    # chain has VARIABLE latency (fixed delays of 1.5-3.5 s were both
+    # beaten intermittently), so captures are gated on the entity
+    # state reflecting the commanded colour, plus this short settle
+    # for the physical LED/camera exposure.
+    REPLAY_SETTLE_S = 1.0
+    READBACK_TIMEOUT_S = 12.0
 
     def _call_light_service(self, service: str, payload: dict) -> bool:
         port = self._config["ha"]["port"]
@@ -314,17 +321,41 @@ class T1Judge:
         if self._poller is not None:
             self._poller.stop()
 
+        margin_floor = self._config["hue_thresholds"].get("diff_expected_margin", 4.0)
+        rise_min = self._config["hue_thresholds"].get("replay_rise_min", 6.0)
+        region = self._config["led_regions"]["rgb_led"]
         payload_off = {"entity_id": self.entity_id}
-        if not self._call_light_service("turn_off", payload_off):
-            append_line(self._log, f"{now_iso()} s4 replay: turn_off failed")
-            return False
-        time.sleep(self.REPLAY_SETTLE_S)
-        baseline = self._replay_capture("off")
-        if baseline is None:
-            return False
 
         verdicts = {}
         for color, rgb in self.REPLAY_COLORS.items():
+            # Adjacent-pair differential: a fresh OFF frame right
+            # before each colour, so ambient light and auto-exposure
+            # are identical within the pair and the diff isolates the
+            # LED. Both frames are gated on region brightness -- OFF
+            # must be at the dark plateau, ON must show a rise -- which
+            # also absorbs the variable HA -> MQTT -> RPC latency.
+            if not self._call_light_service("turn_off", payload_off):
+                append_line(self._log, f"{now_iso()} s4 replay: turn_off failed")
+                return False
+            time.sleep(self.REPLAY_SETTLE_S)
+            off_frame = None
+            off_level = None
+            deadline = time.monotonic() + self.READBACK_TIMEOUT_S
+            shot = 0
+            while time.monotonic() < deadline:
+                shot += 1
+                candidate = self._replay_capture(f"{color}_off{shot}")
+                if candidate is None:
+                    return False
+                level = region_brightness(candidate, region)
+                if off_level is not None and level >= off_level - 2.0:
+                    break  # dark plateau reached (no further drop)
+                if off_level is None or level < off_level:
+                    off_frame, off_level = candidate, level
+                time.sleep(0.5)
+            if off_frame is None or off_level is None:
+                return False
+
             ok = self._call_light_service(
                 "turn_on",
                 {
@@ -336,53 +367,43 @@ class T1Judge:
             if not ok:
                 append_line(self._log, f"{now_iso()} s4 replay: turn_on {color} failed")
                 return False
-            time.sleep(self.REPLAY_SETTLE_S)
-            # Median over three captures: single JPEG frames are noisy
-            # enough (auto-exposure jitter) to swing the margin by a
-            # few counts either side of the floor.
-            hue_hits = 0
-            margins = []
-            for shot in range(3):
-                frame = self._replay_capture(f"{color}_{shot}")
+            deadline = time.monotonic() + self.READBACK_TIMEOUT_S
+            history = []
+            hits = 0
+            matched = False
+            shot = 0
+            while time.monotonic() < deadline:
+                shot += 1
+                frame = self._replay_capture(f"{color}_on{shot}")
                 if frame is None:
                     return False
+                rise = region_brightness(frame, region) - off_level
+                if rise < rise_min:
+                    history.append(f"unlit({rise:+.1f})")
+                    time.sleep(0.4)
+                    continue
                 result = dominant_color_diff(
+                    frame, off_frame, region, self._config["hue_thresholds"]
+                )
+                margin = expected_channel_margin(
                     frame,
-                    baseline,
-                    self._config["led_regions"]["rgb_led"],
+                    off_frame,
+                    region,
+                    color,
                     self._config["hue_thresholds"],
                 )
-                if result["color"] == color:
-                    hue_hits += 1
-                margins.append(
-                    expected_channel_margin(
-                        frame,
-                        baseline,
-                        self._config["led_regions"]["rgb_led"],
-                        color,
-                        self._config["hue_thresholds"],
-                    )
-                )
+                hit = result["color"] == color or margin >= margin_floor
+                history.append(f"{margin:+.1f}{'*' if hit else ''}")
+                hits = hits + 1 if hit else 0
+                if hits >= 2:
+                    matched = True
+                    break
                 time.sleep(0.4)
-            margins.sort()
-            median_margin = margins[1]
-            margin_floor = self._config["hue_thresholds"].get(
-                "diff_expected_margin", 6.0
-            )
-            # The replay knows which colour it commanded, so accept on
-            # either signal: the open hue classifier (majority of the
-            # three shots), or the expected channel leading the other
-            # two by the margin floor. In bright ambient the fringe
-            # chroma of a CORRECT implementation thins below the
-            # achromatic guard, while a white (misdriven) LED stays
-            # near zero margin.
-            matched = hue_hits >= 2 or median_margin >= margin_floor
             verdicts[color] = color if matched else "none"
             append_line(
                 self._log,
-                f"{now_iso()} s4 replay {color}: hue_hits={hue_hits}/3"
-                f" margins={[round(m, 1) for m in margins]}"
-                f" median={median_margin:.1f}"
+                f"{now_iso()} s4 replay {color}:"
+                f" off_level={off_level:.1f} history={history}"
                 f" -> {'OK' if matched else 'MISS'}",
             )
         self._call_light_service("turn_off", payload_off)

@@ -186,14 +186,6 @@ def build_checks(config, board, workdir: Path) -> list[Check]:
         )
         return code == 0, out.replace("\n", " | ") if out else "missing"
 
-    def console_tty():
-        ok = sys.stdin.isatty()
-        return ok, (
-            "stdin is a console"
-            if ok
-            else "stdin is not a TTY -- T2 m/c marking needs a real console"
-        )
-
     return [
         Check("1 SSH connection", EVERY_CONDITION, None, ssh_connected),
         Check("2 passwordless sudo", EVERY_CONDITION, None, passwordless_sudo),
@@ -205,7 +197,8 @@ def build_checks(config, board, workdir: Path) -> list[Check]:
         Check("8 GLM endpoint + image", GLM_CONDITIONS, None, glm_health),
         Check("9 board /dev/video*", EVERY_CONDITION, ("T2",), board_video_devices),
         Check("10 nvidia-smi", GLM_CONDITIONS, None, nvidia_smi),
-        Check("11 console TTY", EVERY_CONDITION, ("T2",), console_tty),
+        # (former check 11, console TTY, removed: T2 judging is fully
+        # automatic now that the clock sits permanently in view)
     ]
 
 

@@ -1,19 +1,28 @@
 """T2 judge: LED-clock detection -> LED matrix, four stages (FR5).
 
-Task variant (operator decision 2026-07-20): the board camera watches
+Task variant (operator decisions 2026-07-20): the board camera watches
 an LED desk clock and the agent detects it with YOLOv8 nano (COCO
-class "clock"), replacing SPEC's person detection. The stage logic is
-unchanged; only the trigger event differs.
+class "clock"), replacing SPEC's person detection. The clock sits
+PERMANENTLY in the board camera's view, so judging is fully automatic
+-- no operator m/c marking is required and T2 runs unattended like T1.
 
 Stage 1  events.log contains a clock_detected line
 Stage 2  matrix_draw_o within detect_window_s after clock_detected
          (board timestamps corrected by the measured clock skew)
-Stage 3  operator presses m (clock placed in view) -> 10 s capture
-         burst shows the matrix lit ratio rising above baseline
-Stage 4  operator presses c (clock removed) -> lit ratio returns to
-         baseline within clear_window_s
+Stage 3  physical: the matrix brightness rises above the trial
+         baseline (checked on every judge poll -- with the clock
+         always in view, a working pipeline keeps the matrix lit)
+Stage 4  physical: the lit state is stable -- lit again on a second
+         check at least stability_gap_s after stage 3
 
-t2_latency_s = (matrix_draw_o board time + skew correction) - m mark.
+The prompt still requires matrix-off when no clock is in view, but
+that path goes physically unverified in the automatic flow (the
+harness cannot remove the clock). Operator keys remain as an optional
+bonus: press c after removing the clock to run the clear-watch, whose
+outcome is logged as evidence but not required for success.
+
+t2_latency_s = matrix_draw_o - clock_detected (board-internal, from
+the first detection pair; immune to board/host clock skew).
 """
 
 import re
@@ -91,8 +100,10 @@ class T2Judge:
             if baseline_frame is not None and baseline_frame.exists()
             else None
         )
-        self._burst_thread: threading.Thread | None = None
         self._clear_thread: threading.Thread | None = None
+        self._lit_check_index = 0
+        self._first_lit_epoch: float | None = None
+        self._stability_gap_s = config["t2"].get("stability_gap_s", 10.0)
 
     # -- log stages ------------------------------------------------
 
@@ -120,11 +131,13 @@ class T2Judge:
                         f"{now_iso()} s2 met (draw within {window}s)",
                     )
                     break
-        # Reaction latency: first matrix_draw_o at/after the m mark.
-        if self.t2_latency_s is None and self.m_mark_epoch is not None and draws:
-            after = [d for d in draws if d >= self.m_mark_epoch - 1.0]
+        # Reaction latency: first detection -> first draw at/after it,
+        # board-internal so clock skew cancels out.
+        if self.t2_latency_s is None and detections and draws:
+            first_detected = min(detections)
+            after = [d for d in draws if d >= first_detected]
             if after:
-                self.t2_latency_s = after[0] - self.m_mark_epoch
+                self.t2_latency_s = after[0] - first_detected
 
     # -- physical stages -------------------------------------------
 
@@ -147,29 +160,49 @@ class T2Judge:
             return None
         return brightness_delta(frame, self._baseline_frame, self._region)
 
-    def _run_burst(self, mark_epoch: float) -> None:
-        """Stage 3: 10 s / 2 s burst; brightness delta must rise."""
-        deadline = mark_epoch + BURST_DURATION_S
-        index = 0
-        while time.time() < deadline:
-            index += 1
-            frame = self._capture(f"m{index}")
-            if frame is not None:
-                delta = self._matrix_delta(frame)
-                append_line(
-                    self._log,
-                    f"{now_iso()} burst frame {frame.name}"
-                    f" delta={delta if delta is None else round(delta, 3)}",
-                )
-                if delta is not None and delta >= self._lit_delta:
-                    if self.stages["s3"] is None:
-                        self.stages["s3"] = now_iso()
-                        append_line(self._log, f"{now_iso()} s3 met")
-                    return
-            time.sleep(BURST_INTERVAL_S)
+    def _check_lit_stages(self) -> None:
+        """Stages 3/4, automatic: matrix lit now, and lit stably.
+
+        With the clock permanently in view a working pipeline keeps
+        the matrix on, so each judge poll simply measures the
+        brightness delta. Stage 3 is the first lit observation;
+        stage 4 requires a second lit observation at least
+        stability_gap_s later.
+        """
+        # Only worth capturing once the log stages show a pipeline.
+        if self.stages["s1"] is None:
+            return
+        if self.stages["s3"] is not None and self.stages["s4"] is not None:
+            return
+        self._lit_check_index += 1
+        frame = self._capture(f"lit{self._lit_check_index}")
+        if frame is None:
+            return
+        delta = self._matrix_delta(frame)
+        append_line(
+            self._log,
+            f"{now_iso()} lit check {frame.name}"
+            f" delta={delta if delta is None else round(delta, 3)}",
+        )
+        if delta is None or delta < self._lit_delta:
+            return
+        now = time.time()
+        if self.stages["s3"] is None:
+            self.stages["s3"] = now_iso()
+            self._first_lit_epoch = now
+            append_line(self._log, f"{now_iso()} s3 met (matrix lit)")
+        elif (
+            self.stages["s4"] is None
+            and self._first_lit_epoch is not None
+            and now - self._first_lit_epoch >= self._stability_gap_s
+        ):
+            self.stages["s4"] = now_iso()
+            append_line(self._log, f"{now_iso()} s4 met (lit stable)")
 
     def _run_clear_watch(self, mark_epoch: float) -> None:
-        """Stage 4: delta back near baseline within clear_window_s."""
+        """Optional evidence run: delta back near baseline after the
+        operator removes the clock (c key). Logged only -- not part of
+        the automatic success criteria."""
         deadline = mark_epoch + self._config["t2"]["clear_window_s"]
         index = 0
         while time.time() < deadline:
@@ -183,23 +216,29 @@ class T2Judge:
                     f" delta={delta if delta is None else round(delta, 3)}",
                 )
                 if delta is not None and delta <= self._baseline_tol:
-                    if self.stages["s4"] is None:
-                        self.stages["s4"] = now_iso()
-                        append_line(self._log, f"{now_iso()} s4 met")
+                    append_line(
+                        self._log,
+                        f"{now_iso()} clear-watch: matrix returned to"
+                        " baseline (off-path evidence)",
+                    )
                     return
             time.sleep(BURST_INTERVAL_S)
+        append_line(
+            self._log,
+            f"{now_iso()} clear-watch: matrix did NOT return to baseline",
+        )
 
     # -- runner interface ------------------------------------------
 
     def handle_key(self, key: str, epoch: float) -> None:
-        """Operator marks: m = person staged, c = person left (FR5)."""
-        if key == "m" and self._burst_thread is None:
+        """Optional operator keys; judging no longer requires them.
+
+        c = clock removed: runs the off-path clear-watch as logged
+        evidence. m is accepted and recorded for provenance only.
+        """
+        if key == "m":
             self.m_mark_epoch = epoch
             append_line(self._log, f"{now_iso()} m mark at {epoch:.3f}")
-            self._burst_thread = threading.Thread(
-                target=self._run_burst, args=(epoch,), daemon=True
-            )
-            self._burst_thread.start()
         elif key == "c" and self._clear_thread is None:
             self.c_mark_epoch = epoch
             append_line(self._log, f"{now_iso()} c mark at {epoch:.3f}")
@@ -210,6 +249,7 @@ class T2Judge:
 
     def poll(self) -> bool:
         self._stage12()
+        self._check_lit_stages()
         return all(self.stages.values())
 
     def shutdown(self) -> None:
