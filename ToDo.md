@@ -5,6 +5,21 @@
 
 ## Active Tasks
 
+- [ ] CLD_VP production run (6 trials, operator-approved 2026-07-20).
+      Results so far: T1_CLD_VP_r1 SUCCESS (17.7 min, $4.92, replay
+      margins red +70 / green +9.5 / blue +5.1); T2_CLD_VP_r1 FT5 --
+      agent built a working bridge->matrix path and an onnxruntime
+      yolov8n pipeline but the real detection loop never fired
+      (events.log empty, matrix delta ~0.011 vs 0.25 across 24
+      checks); the physical stages caught what the agent-forgeable
+      log stages could not. r2/r3 (T1+T2) continuing unattended.
+      Two harness findings this run: (a) ssh_calls under-counted
+      because the agent uses Git Bash where .bat wrappers are not on
+      PATH -- fixed by emitting POSIX-script wrappers alongside .bat
+      (verified: Git Bash `ssh` now logs to ssh_calls.log); (b) T2
+      needs a longer timeout budget (agent spent ~45 min on
+      ultralytics->onnxruntime pivot + disk cleanup).
+
 - [ ] Implement the UNO Q pilot benchmark harness per `docs/SPEC.md` with the
       approved plan deviations: board access is SSH-only (adb retired after
       initial setup), Claude conditions (CLD_VP/CLD_VM, 12 trials) run now with

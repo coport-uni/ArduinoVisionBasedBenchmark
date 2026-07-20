@@ -42,6 +42,24 @@ def _resolve(tool: str) -> str:
     return path
 
 
+# Git Bash (the claude CLI Bash tool) does not resolve .bat files on
+# PATH, so every wrapper is emitted twice: a .bat for cmd/PowerShell
+# and an extensionless POSIX script for bash. Both log to the same
+# file. $(cygpath -u ...) is unnecessary -- Git Bash runs Windows
+# executables from absolute Windows paths directly.
+_SH_CALL_WRAPPER_TEMPLATE = """#!/bin/sh
+LOGFILE="$(dirname "$0")/{log_name}"
+printf '%s {tool} %s\\n' "$(date -Iseconds)" "$*" >> "$LOGFILE"
+exec "{real_tool}" "$@"
+"""
+
+_SH_SNAP_TEMPLATE = """#!/bin/sh
+LOGFILE="$(dirname "$0")/snap_calls.log"
+printf '%s snap %s\\n' "$(date -Iseconds)" "$*" >> "$LOGFILE"
+exec "{python}" -m harness.snap_cli --trial-dir "{trial_dir}" --repo "{repo}"
+"""
+
+
 def generate_wrappers(trial_dir: Path, vision: str, config, repo_root: Path) -> Path:
     """Create the wrapper directory for one trial.
 
@@ -60,6 +78,14 @@ def generate_wrappers(trial_dir: Path, vision: str, config, repo_root: Path) -> 
             _CALL_WRAPPER_TEMPLATE.format(log_name=log_name, tool=tool, real_tool=real),
             encoding="ascii",
         )
+        sh_path = wrapper_dir / tool
+        sh_path.write_text(
+            _SH_CALL_WRAPPER_TEMPLATE.format(
+                log_name=log_name, tool=tool, real_tool=real.replace("\\", "/")
+            ),
+            encoding="ascii",
+            newline="\n",
+        )
 
     if vision == "V+":
         (wrapper_dir / "snap.bat").write_text(
@@ -69,6 +95,15 @@ def generate_wrappers(trial_dir: Path, vision: str, config, repo_root: Path) -> 
                 repo=str(repo_root),
             ),
             encoding="ascii",
+        )
+        (wrapper_dir / "snap").write_text(
+            _SH_SNAP_TEMPLATE.format(
+                python=str(sys.executable).replace("\\", "/"),
+                trial_dir=str(trial_dir).replace("\\", "/"),
+                repo=str(repo_root).replace("\\", "/"),
+            ),
+            encoding="ascii",
+            newline="\n",
         )
     return wrapper_dir
 
