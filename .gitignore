@@ -42,6 +42,7 @@ results/
 # Transient camera-capture fixtures from calibration debug scripts
 claude_test/rgb_burst/
 claude_test/verify_burst/
+claude_test/live_burst/
 
 # ===== Secrets =====
 .env

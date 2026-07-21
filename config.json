@@ -22,8 +22,8 @@
   "web_search_allowed": false,
   "enabled_conditions": ["CLD_VP", "CLD_VM"],
   "led_regions": {
-    "rgb_led": [434, 233, 460, 258],
-    "matrix": [448, 192, 484, 218]
+    "rgb_led": [360, 217, 380, 236],
+    "matrix": [366, 178, 406, 213]
   },
   "hue_thresholds": {
     "red": [345, 15],
