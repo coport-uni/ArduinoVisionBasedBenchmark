@@ -20,7 +20,19 @@
       (red +78 / blue +8.8 / green +3.5, green just below the +4 floor
       as afternoon ambient rose to off_level ~300).
       REMAINING for a full T1 dataset: re-run VP_r3 under favourable
-      light (or camera closer). T2 still deferred (clock visibility).
+      light (or camera closer).
+
+- [ ] T2 target class change required (pre-flight 2026-07-21):
+      yolov8n does NOT detect the LED 7-segment desk clock as COCO
+      "clock" (only chair/couch/mouse at low conf) -- COCO clock is
+      trained on analog clocks. The board camera sees the clock
+      clearly ("17:08"), so it's a class-mismatch, not a visibility
+      problem: every T2 trial would fail at s1 regardless of agent
+      skill. Recommended retarget: cell phone (top-reliability COCO
+      class, easy to place); alternatives person (original SPEC) or an
+      analog clock. AWAITING operator to place the object in the board
+      camera view; then verify detection (test_clock_detection.py) and
+      swap the T2 prompt event name + judge class before running.
 
 - [ ] BLOCKED on optics (operator repositioning camera 2026-07-21):
       T1 s4 physical verification is unreliable in strong morning light
