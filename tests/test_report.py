@@ -17,9 +17,18 @@ from harness.report import (
 )
 
 
+_MODEL_CODE = {"claude": "CLD", "glm": "GLM"}
+_VISION_CODE = {"V+": "VP", "V-": "VM"}
+
+
+def canonical_trial_id(task, model, vision, rep):
+    """Match TrialSpec.trial_id, e.g. T1_CLD_VP_r1."""
+    return f"{task}_{_MODEL_CODE[model]}_{_VISION_CODE[vision]}_r{rep}"
+
+
 def make_record(task, model, vision, rep, duration, success=True, ft8=False):
     return {
-        "trial_id": f"{task}_{model}_{vision}_r{rep}",
+        "trial_id": canonical_trial_id(task, model, vision, rep),
         "task": task,
         "model": model,
         "vision": vision,
@@ -109,6 +118,22 @@ class LoadResultsTest(unittest.TestCase):
             loaded = load_results(results)
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0]["trial_id"], good["trial_id"])
+
+    def test_archived_void_dir_excluded(self):
+        # An archived retry (T1_CLD_VP_r1_void_<ts>) can still carry
+        # status=complete; it must not be aggregated.
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            good = make_record("T1", "claude", "V+", 1, 900)
+            (results / good["trial_id"]).mkdir()
+            (results / good["trial_id"] / "result.json").write_text(json.dumps(good))
+            archived = make_record("T1", "claude", "V+", 1, 900, success=False)
+            arch_dir = results / f"{good['trial_id']}_void_20260721_084044"
+            arch_dir.mkdir()
+            (arch_dir / "result.json").write_text(json.dumps(archived))
+            loaded = load_results(results)
+            self.assertEqual(len(loaded), 1)
+            self.assertTrue(loaded[0]["success"])
 
 
 if __name__ == "__main__":

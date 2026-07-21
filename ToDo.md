@@ -5,6 +5,23 @@
 
 ## Active Tasks
 
+- [ ] T1 CLD run COMPLETE (2026-07-21, recalibrated camera). 5/6 valid
+      successes; VP_r3 = FT8 void (optical, re-run). all_results.csv +
+      report.md generated.
+      Per-condition (successful trials): V+ n=2 success 1.00, duration
+      720 s mean; V- n=3 success 1.00, duration 667 s mean; vision
+      effect (Cohen's d) 0.36. snap: V+ 4/trial, V- 0 (condition
+      manipulation clean). Sample-size estimate: 15 reps/cell for a
+      20% effect. Two report bugs fixed: load_results was globbing
+      `*_void_*` archives (an archived partial carried status=complete
+      and inflated V+ to n=3 success 0.67) -- now filtered to
+      canonical trial-dir names; VP_r3 classified FT8 after direct
+      drive of its surviving entity confirmed the RGB light works
+      (red +78 / blue +8.8 / green +3.5, green just below the +4 floor
+      as afternoon ambient rose to off_level ~300).
+      REMAINING for a full T1 dataset: re-run VP_r3 under favourable
+      light (or camera closer). T2 still deferred (clock visibility).
+
 - [ ] BLOCKED on optics (operator repositioning camera 2026-07-21):
       T1 s4 physical verification is unreliable in strong morning light
       (region off_level ~270 vs ~194 last evening) -- the small LED3

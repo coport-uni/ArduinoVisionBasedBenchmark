@@ -13,8 +13,14 @@ import argparse
 import csv
 import json
 import math
+import re
 import sys
 from pathlib import Path
+
+# Canonical trial-dir name, e.g. T1_CLD_VP_r2. Archived retries are
+# suffixed (`..._void_<timestamp>`) and must NOT be aggregated -- an
+# archived partial can still carry status="complete".
+TRIAL_DIR_RE = re.compile(r"^T[12]_[A-Z]{3}_V[PM]_r\d+$")
 
 Z_ALPHA_2 = 1.959964  # two-sided alpha = 0.05
 Z_POWER = 0.841621  # power = 0.80
@@ -52,6 +58,8 @@ def load_results(results_dir: Path) -> list[dict]:
     """All complete trial records; FT8/void trials are excluded (FR7)."""
     records = []
     for result_path in sorted(results_dir.glob("*/result.json")):
+        if not TRIAL_DIR_RE.match(result_path.parent.name):
+            continue  # skip archived retries (T1_CLD_VP_r1_void_...)
         try:
             data = json.loads(result_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
