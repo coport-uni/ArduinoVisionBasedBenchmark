@@ -3,7 +3,6 @@
 # does not, every T2 trial fails at s1 regardless of agent skill, so
 # the task is not viable with this clock/model.
 import sys
-from pathlib import Path
 
 from ultralytics import YOLO
 
