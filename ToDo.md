@@ -5,6 +5,23 @@
 
 ## Active Tasks
 
+- [ ] BLOCKED on optics (operator repositioning camera 2026-07-21):
+      T1 s4 physical verification is unreliable in strong morning light
+      (region off_level ~270 vs ~194 last evening) -- the small LED3
+      colour fringe is swamped, so green/blue rises fall below the
+      lit-gate. Two contributing factors seen in the frames: (a) bright
+      ambient, (b) the turn_off "off" baseline sometimes captured while
+      the LED was still blue-lit (variable HA->MQTT->RPC latency).
+      GOOD NEWS: the non-interactive prompt fix worked -- the agent now
+      runs to completion (s1/s2/s3 met, ssh_calls=46, snap_calls=7, no
+      background parking). Hardened the off-baseline (turn_off issued
+      twice + wait for a STABLE dark reading before accepting) so a
+      still-lit frame can't contaminate the baseline. NEXT: operator
+      moves the host camera closer to the board / shades it; then
+      RE-CALIBRATE led_regions (LED moves in-frame) via
+      claude_test/verify_led_matrix.py or the calibrate tool, and
+      re-run `--only T1`.
+
 - [ ] T1-only production run (operator decision 2026-07-21: T2 clock
       detection deferred -- the clock is hard to recognise in the
       board-camera baseline). Running `--only T1` = T1 x {V+, V-} x 3

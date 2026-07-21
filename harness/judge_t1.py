@@ -345,12 +345,20 @@ class T1Judge:
             # LED. Both frames are gated on region brightness -- OFF
             # must be at the dark plateau, ON must show a rise -- which
             # also absorbs the variable HA -> MQTT -> RPC latency.
-            if not self._call_light_service("turn_off", payload_off):
-                append_line(self._log, f"{now_iso()} s4 replay: turn_off failed")
-                return False
+            # turn_off is issued twice (the first can be lost in the
+            # variable HA -> MQTT -> RPC chain, leaving the LED lit into
+            # the baseline capture) and we wait for the region to reach
+            # a STABLE dark reading: two consecutive frames within
+            # off_stable_tol of each other. A mid-transition still-lit
+            # frame is thus never accepted as the baseline.
+            self._call_light_service("turn_off", payload_off)
             time.sleep(self.REPLAY_SETTLE_S)
+            self._call_light_service("turn_off", payload_off)
+            time.sleep(self.REPLAY_SETTLE_S)
+            off_stable_tol = self._config["hue_thresholds"].get("off_stable_tol", 4.0)
             off_frame = None
             off_level = None
+            prev_level = None
             deadline = time.monotonic() + self.READBACK_TIMEOUT_S
             shot = 0
             while time.monotonic() < deadline:
@@ -359,13 +367,19 @@ class T1Judge:
                 if candidate is None:
                     return False
                 level = region_brightness(candidate, region)
-                if off_level is not None and level >= off_level - 2.0:
-                    break  # dark plateau reached (no further drop)
-                if off_level is None or level < off_level:
+                if off_frame is None or level < off_level:
                     off_frame, off_level = candidate, level
-                time.sleep(0.5)
+                if prev_level is not None and abs(level - prev_level) <= off_stable_tol:
+                    break  # stable dark reading reached
+                prev_level = level
+                time.sleep(0.6)
             if off_frame is None or off_level is None:
                 return False
+            append_line(
+                self._log,
+                f"{now_iso()} replay {color} off baseline:"
+                f" {off_frame.name} level={off_level:.1f}",
+            )
 
             ok = self._call_light_service(
                 "turn_on",
